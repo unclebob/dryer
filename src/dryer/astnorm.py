@@ -140,12 +140,16 @@ _TYPE_ARGS = {"type_arguments", "type_parameters"}
 _DATA: bytes = b""
 
 
-def normalize(node, data: bytes):
-    """Normalized tree for `node`, or None when the node is only punctuation."""
+def normalize(node, data: bytes, omit=None):
+    """Normalized tree for `node`, or None when the node is only punctuation.
+
+    `omit`, when given, is a predicate over descendant nodes. A descendant it
+    accepts normalizes to nothing, as a comment does. The root is always kept.
+    """
 
     global _DATA
     _DATA = data
-    return _normalize(node)
+    return _normalize(node, omit=omit)
 
 
 def _text(node) -> str:
@@ -369,7 +373,13 @@ def _assemble(node, mode: str, head: bool, cache):
     return _assemble_children(node, cache)
 
 
-def _normalize(node, head: bool = False):
+def _omitted_or_leaf(current, mode: str, head: bool, root, omit):
+    if omit is not None and current.id != root.id and omit(current):
+        return None
+    return _try_leaf(current, mode, head)
+
+
+def _normalize(node, head: bool = False, omit=None):
     # Post-order. A 1,200-deep expression must not raise RecursionError.
     cache = {}
     stack = [(node, "norm", head, False)]
@@ -379,7 +389,7 @@ def _normalize(node, head: bool = False):
         if not expanded:
             if key in cache:
                 continue
-            leaf = _try_leaf(current, mode, is_head)
+            leaf = _omitted_or_leaf(current, mode, is_head, node, omit)
             if leaf is not _PENDING:
                 cache[key] = leaf
                 continue
