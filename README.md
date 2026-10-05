@@ -98,11 +98,13 @@ DUPLICATE score=0.89
 | Clojure | every top-level form except `ns` | reader-conditional branches other than `:clj` |
 | Java | methods with a body | constructors, abstract methods, methods inside anonymous or local classes |
 | Go | functions and methods with a body | function literals stay inside the enclosing function |
-| TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
+| TypeScript | functions, methods, top-level arrow functions, and inline route callbacks passed to `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `all`, or `use`, as in `app.get(...)` | other callbacks nested inside a function |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
+
+A TypeScript route callback's code is not part of its enclosing function's form, as crapper does not charge it to that function. A form is never paired with a form nested inside it.
 
 A missing or unreadable Clojure form is reported on stderr. Forms read before it are still compared. The run exits `0` after a report, `1` on a usage error, and `2` on an unknown `--format`.
 

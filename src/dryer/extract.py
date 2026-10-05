@@ -4,6 +4,11 @@ Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
 functions inside `mod tests` are test code and are skipped.
+
+TypeScript also compares each inline route callback, as crapper does: an arrow
+function or function expression passed to a call such as `app.get(...)` whose
+method is one of `_ROUTE_METHODS`. A route callback is left out of the form of
+the function that encloses it.
 """
 
 from __future__ import annotations
@@ -26,6 +31,18 @@ _DEFINITION_PARENTS = {
     "public_field_definition",
     "property_definition",
 }
+_ROUTE_METHODS = {
+    "get",
+    "post",
+    "put",
+    "patch",
+    "delete",
+    "head",
+    "options",
+    "all",
+    "use",
+}
+_CALLBACKS = {"arrow_function", "function_expression"}
 
 
 def _grammar(path: str) -> str:
@@ -117,16 +134,53 @@ def _typescript_parent(node):
     return parent
 
 
+def _call_callee(call):
+    for child in call.children:
+        if child.type != "arguments":
+            return child
+    return None
+
+
+def _is_route_call(data: bytes, call) -> bool:
+    """A call such as `app.get(...)`: the callee's property is a route method."""
+
+    callee = _call_callee(call)
+    if callee is None or callee.type != "member_expression":
+        return False
+    ident = child_of_type(callee, "property_identifier")
+    return ident is not None and node_text(data, ident).lower() in _ROUTE_METHODS
+
+
+def _is_route_callback(data: bytes, node) -> bool:
+    """An arrow function or function expression passed to a route method call."""
+
+    if node.type not in _CALLBACKS:
+        return False
+    current = node.parent
+    while current is not None and current.type == "parenthesized_expression":
+        current = current.parent
+    if current is None or current.type != "arguments":
+        return False
+    call = current.parent
+    return call is not None and call.type == "call_expression" and _is_route_call(data, call)
+
+
+def _typescript_callback(data: bytes, node):
+    if _is_route_callback(data, node):
+        return node
+    return _typescript_parent(node)
+
+
 def _typescript_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
         if node.type in {"function_declaration", "method_definition"}:
             if _keep_typescript_function(node):
                 found.append(node)
-        elif node.type in {"arrow_function", "function_expression"}:
-            parent = _typescript_parent(node)
-            if parent is not None:
-                found.append(parent)
+        elif node.type in _CALLBACKS:
+            candidate = _typescript_callback(data, node)
+            if candidate is not None:
+                found.append(candidate)
     return found
 
 
@@ -144,21 +198,30 @@ def _rust_nodes(data: bytes, root) -> list:
 
 
 _PICKERS = {
-    "java": ("java", _java_nodes),
-    "go": ("go", _go_nodes),
-    "python": ("python", _python_nodes),
-    "typescript": (_grammar, _typescript_nodes),
-    "rust": ("rust", _rust_nodes),
+    "java": ("java", _java_nodes, None),
+    "go": ("go", _go_nodes, None),
+    "python": ("python", _python_nodes, None),
+    "typescript": (_grammar, _typescript_nodes, _is_route_callback),
+    "rust": ("rust", _rust_nodes, None),
 }
 
 
+def _omission(excluded, data: bytes):
+    """The nodes left out of an enclosing form, or None when nothing is."""
+
+    if excluded is None:
+        return None
+    return lambda node: excluded(data, node)
+
+
 def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entry]:
-    grammar_or_name, pick = _PICKERS[language]
+    grammar_or_name, pick, excluded = _PICKERS[language]
     grammar = grammar_or_name(path) if callable(grammar_or_name) else grammar_or_name
     data, tree = parse(source, grammar)
+    omit = _omission(excluded, data)
     entries = []
     for node in pick(data, tree.root_node):
-        normalized = normalize(node, data)
+        normalized = normalize(node, data, omit)
         if normalized is None:
             continue
         entries.append(

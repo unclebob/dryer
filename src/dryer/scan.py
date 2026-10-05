@@ -41,12 +41,16 @@ def scan_files(
     return entries, warnings
 
 
-def _same_span(left: Entry, right: Entry) -> bool:
+def _within(inner: Entry, outer: Entry) -> bool:
+    return outer.start_line <= inner.start_line and inner.end_line <= outer.end_line
+
+
+def _nested(left: Entry, right: Entry) -> bool:
+    """One form's lines lie within the other's in the same file."""
+
     if left.file != right.file:
         return False
-    if left.start_line != right.start_line:
-        return False
-    return left.end_line == right.end_line
+    return _within(left, right) or _within(right, left)
 
 
 def _duplicate_key(item: Duplicate):
@@ -62,7 +66,10 @@ def _duplicate_key(item: Duplicate):
 
 
 def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
-    """Pair forms of the same language. Each unordered pair is reported once."""
+    """Pair forms of the same language. Each unordered pair is reported once.
+
+    A form is never paired with a form whose lines lie within its own.
+    """
 
     by_language: dict[str, list[Entry]] = {}
     for entry in entries:
@@ -72,7 +79,7 @@ def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
     for language, group in by_language.items():
         for index, left in enumerate(group):
             for right in group[index + 1 :]:
-                if _same_span(left, right):
+                if _nested(left, right):
                     continue
                 score = jaccard(left.fingerprints, right.fingerprints)
                 if score < threshold:

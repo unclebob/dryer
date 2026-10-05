@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dryer.extract import entries_in_source
-from dryer.model import Entry
+from dryer.model import Entry, Span
 from dryer.scan import _keep, find_duplicates, scan_files
 from dryer.treesitter import descendants, end_line, parse
 
@@ -556,22 +556,38 @@ def _entry(file: str, start: int, end: int, names: set[str], language: str = "py
     return Entry(language, file, start, end, nodes, frozenset(names))
 
 
-def test_the_same_span_is_not_a_pair():
+def test_a_nested_span_is_not_a_pair():
     assert find_duplicates([
         _entry("a.py", 1, 4, {"q"}),
         _entry("a.py", 1, 4, {"q"}),
+    ], 0.0) == []
+    assert find_duplicates([
+        _entry("a.py", 1, 5, {"q"}),
+        _entry("a.py", 3, 5, {"q"}),
+    ], 0.0) == []
+    assert find_duplicates([
+        _entry("a.py", 1, 4, {"q"}),
+        _entry("a.py", 1, 8, {"q"}),
+    ], 0.0) == []
+    assert find_duplicates([
+        _entry("a.ts", 2, 3, {"q"}, language="typescript"),
+        _entry("a.ts", 1, 9, {"q"}, language="typescript"),
     ], 0.0) == []
     assert len(find_duplicates([
         _entry("a.py", 1, 4, {"q"}),
         _entry("b.py", 1, 4, {"q"}),
     ], 0.5)) == 1
     assert len(find_duplicates([
+        _entry("a.py", 1, 9, {"q"}),
+        _entry("b.py", 2, 3, {"q"}),
+    ], 0.5)) == 1
+    assert len(find_duplicates([
         _entry("a.py", 1, 5, {"q"}),
-        _entry("a.py", 3, 5, {"q"}),
+        _entry("a.py", 3, 8, {"q"}),
     ], 0.5)) == 1
     assert len(find_duplicates([
         _entry("a.py", 1, 4, {"q"}),
-        _entry("a.py", 1, 8, {"q"}),
+        _entry("a.py", 5, 8, {"q"}),
     ], 0.5)) == 1
 
 
@@ -610,3 +626,166 @@ def test_a_deep_expression_is_read():
     entries, warning = entries_in_source("clojure", f"(defn place [] {nested})\n", "app.clj", "app.clj")
     assert warning is None
     assert entries
+
+
+ACCOUNT_ROUTES = """\
+export function registerAccountRoutes(app: FastifyInstance, store: Store): void {
+  app.post("/accounts", async (request, reply) => {
+    const body = parseBody(request.body);
+    if (!body.valid) {
+      return reply.code(400).send({ error: body.message });
+    }
+    const saved = await store.insert("accounts", body.value);
+    return reply.code(201).send(saved);
+  });
+  app.post("/teams", async (req, res) => {
+    const input = parseBody(req.body);
+    if (!input.valid) {
+      return res.code(422).send({ error: input.message });
+    }
+    const created = await store.insert("teams", input.value);
+    return res.code(201).send(created);
+  });
+}
+"""
+
+
+def test_inline_route_handlers_in_one_function_are_compared(tmp_path):
+    write_source(tmp_path, "accounts.ts", ACCOUNT_ROUTES)
+    files = sorted(tmp_path.glob("*.ts"))
+    entries, warnings = scan_files(files, tmp_path, min_lines=4, min_nodes=20)
+    assert warnings == []
+    found = find_duplicates(entries, threshold=0.82)
+    assert [(item.left, item.right) for item in found] == [
+        (Span("accounts.ts", 2, 9), Span("accounts.ts", 10, 17))
+    ]
+
+
+def test_the_enclosing_function_is_not_paired_with_its_route_callbacks(tmp_path):
+    write_source(tmp_path, "accounts.ts", ACCOUNT_ROUTES)
+    files = sorted(tmp_path.glob("*.ts"))
+    entries, warnings = scan_files(files, tmp_path, min_lines=1, min_nodes=1)
+    assert warnings == []
+    assert [(entry.start_line, entry.end_line) for entry in entries] == [(1, 18), (2, 9), (10, 17)]
+    found = find_duplicates(entries, threshold=0.0)
+    assert [(item.left.start_line, item.right.start_line) for item in found] == [(2, 10)]
+
+
+def test_a_callback_that_is_not_a_route_stays_inside_its_function():
+    assert spans(
+        "typescript",
+        """\
+export function mount(app: App, items: number[]): void {
+  items.map((item) => {
+    return item + 1;
+  });
+  app.addHook("onRequest", async (req, reply) => {
+    return reply;
+  });
+  setTimeout(() => {
+    return 1;
+  });
+  app.register(async (scope) => {
+    return scope;
+  });
+}
+""",
+        "a.ts",
+    ) == [(1, 14)]
+
+
+def test_every_route_callback_form_is_a_candidate():
+    assert spans(
+        "typescript",
+        """\
+export function mount(app: App): void {
+  app.get("/a", function pre(req, reply) {
+    return reply;
+  }, async (req, reply) => {
+    return reply;
+  });
+  app.put("/b", ((req, reply) => {
+    return reply;
+  }));
+  app.route("/c").get((req, reply) => {
+    return reply;
+  }).post((req, reply) => {
+    return reply;
+  });
+  this.app.DELETE("/d", (req, reply) => {
+    return reply;
+  });
+  app.get<{ Params: { id: string } }>("/e", (req, reply) => {
+    return reply;
+  });
+  app.use((req, reply, next) => {
+    router.patch("/f", (inner, done) => done());
+    return next();
+  });
+}
+app.options("/g", (req, reply) => reply.send(1));
+""",
+        "a.ts",
+    ) == [
+        (1, 25),
+        (2, 4),
+        (4, 6),
+        (7, 9),
+        (10, 12),
+        (12, 14),
+        (15, 17),
+        (18, 20),
+        (21, 24),
+        (22, 22),
+        (26, 26),
+    ]
+
+
+def test_an_expression_bodied_route_arrow_is_kept_when_large_enough(tmp_path):
+    write_source(
+        tmp_path,
+        "a.ts",
+        """\
+app.get("/small", (req, res) => res.send(1));
+app.get("/large", (req, res) =>
+  res.code(200).send({
+    items: req.query.items.map((item) => item.id),
+    total: req.query.items.length,
+  }));
+""",
+    )
+    files = sorted(tmp_path.glob("*.ts"))
+    every, warnings = scan_files(files, tmp_path, min_lines=1, min_nodes=1)
+    assert warnings == []
+    assert [(entry.start_line, entry.end_line) for entry in every] == [(1, 1), (2, 6)]
+    kept, warnings = scan_files(files, tmp_path, min_lines=4, min_nodes=20)
+    assert [(entry.start_line, entry.end_line) for entry in kept] == [(2, 6)]
+
+
+def _enclosing(source: str) -> Entry:
+    return forms("typescript", source, "a.ts")[0]
+
+
+def test_a_route_callback_is_not_part_of_the_enclosing_form():
+    template = """\
+export function mount(app: App, xs: number[]): number[] {
+  const ys = filter(xs, odd);
+  app.post("/users"%s);
+  return map(ys, inc);
+}
+"""
+    without = _enclosing(template % "")
+    first = _enclosing(template % """, async (req, reply) => {
+    return reply.send(req.body);
+  }""")
+    second = _enclosing(template % """, function (request, reply) {
+    if (request.body) {
+      return reply.code(201).send(save(request.body));
+    }
+    return reply.code(400).send(null);
+  }""")
+    assert (without.start_line, without.end_line) == (1, 5)
+    assert (first.start_line, first.end_line) == (1, 7)
+    for entry in (first, second):
+        assert entry.fingerprints == without.fingerprints
+        assert entry.nodes == without.nodes

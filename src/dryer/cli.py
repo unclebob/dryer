@@ -59,7 +59,9 @@ named {_skipped_directory_text()} are skipped, as are *_test.go, *.test.cts,
 *.spec.cts, *.spec.ts, test_*.py, and *_test.py files.
 
 Clojure compares every top-level form except ns. The other languages compare
-functions and methods. A form is only compared with forms in the same language.
+functions and methods. TypeScript also compares inline route callbacks passed
+to app.get(...) and the other route methods: post, put, patch, delete, head,
+options, all, and use. A form is only compared with forms in the same language.
 
 Exit codes:
   0  the report was written
