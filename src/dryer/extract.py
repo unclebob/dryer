@@ -27,6 +27,17 @@ _DEFINITION_PARENTS = {
     "property_definition",
 }
 
+_KOTLIN_CONTAINERS = {
+    "source_file",
+    "class_declaration",
+    "object_declaration",
+    "companion_object",
+    "class_body",
+    "enum_class_body",
+    "enum_entry",
+    "ERROR",
+}
+
 
 def _grammar(path: str) -> str:
     if path.endswith(".tsx"):
@@ -88,6 +99,30 @@ def _java_nodes(data: bytes, root) -> list:
     return found
 
 
+def _kotlin_inline(node) -> bool:
+    modifiers = child_of_type(node, "modifiers")
+    if modifiers is None:
+        return False
+    return any(
+        child_of_type(modifier, "inline") is not None
+        for modifier in modifiers.children
+        if modifier.type == "function_modifier"
+    )
+
+
+def _kotlin_nodes(data: bytes, root) -> list:
+    found = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node.type == "function_declaration":
+            if _has(node, "function_body") and not _kotlin_inline(node):
+                found.append(node)
+        elif node.type in _KOTLIN_CONTAINERS:
+            stack.extend(reversed(node.children))
+    return found
+
+
 def _go_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
@@ -145,6 +180,7 @@ def _rust_nodes(data: bytes, root) -> list:
 
 _PICKERS = {
     "java": ("java", _java_nodes),
+    "kotlin": ("kotlin", _kotlin_nodes),
     "go": ("go", _go_nodes),
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
@@ -158,7 +194,7 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
     data, tree = parse(source, grammar)
     entries = []
     for node in pick(data, tree.root_node):
-        normalized = normalize(node, data)
+        normalized = normalize(node, data, language)
         if normalized is None:
             continue
         entries.append(

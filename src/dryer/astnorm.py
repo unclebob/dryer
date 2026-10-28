@@ -27,6 +27,7 @@ _IDENTIFIERS = {
     "property_identifier",
     "shorthand_property_identifier",
     "shorthand_property_identifier_pattern",
+    "simple_identifier",
     "package_identifier",
 }
 
@@ -51,6 +52,11 @@ _LITERALS = {
     "float_literal",
     "imaginary_literal",
     "integer_literal",
+    "real_literal",
+    "long_literal",
+    "hex_literal",
+    "bin_literal",
+    "unsigned_literal",
     "true",
     "false",
     "null",
@@ -127,6 +133,7 @@ _ATTRIBUTES = {
     "selector_expression",
     "field_access",
     "field_expression",
+    "navigation_expression",
 }
 
 _SCOPED = {
@@ -134,17 +141,25 @@ _SCOPED = {
     "scoped_type_identifier",
 }
 
-_ARG_LISTS = {"argument_list", "arguments"}
+_ARG_LISTS = {"argument_list", "arguments", "call_suffix"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
+LANGUAGE_OPERATORS = {
+    "kotlin": frozenset({"?:", "!!", "..", "..<", "in", "is", "as", "as?"}),
+}
+
+_INTERPOLATIONS = {"interpolation", "interpolated_identifier", "interpolated_expression"}
+
 _DATA: bytes = b""
+_EXTRA_OPERATORS: frozenset[str] = frozenset()
 
 
-def normalize(node, data: bytes):
+def normalize(node, data: bytes, language: str = ""):
     """Normalized tree for `node`, or None when the node is only punctuation."""
 
-    global _DATA
+    global _DATA, _EXTRA_OPERATORS
     _DATA = data
+    _EXTRA_OPERATORS = LANGUAGE_OPERATORS.get(language, frozenset())
     return _normalize(node)
 
 
@@ -158,7 +173,9 @@ _PENDING = object()
 def _is_literal(node) -> bool:
     if node.type not in _LITERALS:
         return False
-    if node.type == "string" and any(child.type == "interpolation" for child in node.children):
+    if node.type in {"string", "string_literal"} and any(
+        child.type in _INTERPOLATIONS for child in node.children
+    ):
         return False
     return True
 
@@ -166,6 +183,8 @@ def _is_literal(node) -> bool:
 def _named_before_args(node):
     incoming = []
     for child in node.named_children:
+        if child.type in _SKIP:
+            continue
         if child.type in _ARG_LISTS:
             return incoming, child
         incoming.append(child)
@@ -201,7 +220,7 @@ def _try_leaf(node, mode: str, head: bool):
         return _PENDING
     if node.type in _SKIP:
         return None
-    if node.type in _OPERATORS:
+    if node.type in _OPERATORS or node.type in _EXTRA_OPERATORS:
         return [K("symbol"), node.type]
     if not node.is_named:
         return None
@@ -222,11 +241,19 @@ def _call_jobs(node):
     return jobs
 
 
+def _member(node):
+    *objects, name = node.named_children
+    safe = False
+    if name.type == "navigation_suffix" and name.named_children:
+        safe = any(child.type == "?." for child in name.children)
+        name = name.named_children[-1]
+    return objects, name, safe
+
+
 def _attr_jobs(node, head: bool):
-    named = list(node.named_children)
-    if not named:
+    if not node.named_children:
         return []
-    *objects, name = named
+    objects, name, _ = _member(node)
     jobs = [(obj, "norm", False) for obj in objects]
     if name.type in _IDENTIFIERS:
         return jobs
@@ -268,7 +295,14 @@ def _jobs(node, mode: str, head: bool):
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
         return _attr_jobs(node, head)
-    return [(child, "norm", False) for child in node.children]
+    return [(child, "norm", _is_infix_name(node, child)) for child in node.children]
+
+
+def _is_infix_name(node, child) -> bool:
+    if node.type != "infix_expression":
+        return False
+    named = [item for item in node.named_children if item.type not in _SKIP]
+    return len(named) == 3 and child == named[1]
 
 
 def _name_value(name, head: bool, cache):
@@ -306,15 +340,16 @@ def _assemble_call(node, cache):
 
 
 def _assemble_attr(node, head: bool, cache):
-    named = list(node.named_children)
-    if not named:
+    if not node.named_children:
         return [K(node.type)]
-    *objects, name = named
+    objects, name, safe = _member(node)
     parts = [K(node.type)]
     for obj in objects:
         norm = cache[(id(obj), "norm", False)]
         if norm is not None:
             parts.append(norm)
+    if safe:
+        parts.append([K("symbol"), "?."])
     nested = _name_value(name, head, cache)
     if nested is not None:
         parts.append(nested)
@@ -348,7 +383,7 @@ def _callee_value(node, cache):
 def _assemble_children(node, cache):
     children = []
     for child in node.children:
-        norm = cache[(id(child), "norm", False)]
+        norm = cache[(id(child), "norm", _is_infix_name(node, child))]
         if norm is not None:
             children.append(norm)
     return [K(node.type), *children]

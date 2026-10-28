@@ -610,3 +610,34 @@ def test_a_deep_expression_is_read():
     entries, warning = entries_in_source("clojure", f"(defn place [] {nested})\n", "app.clj", "app.clj")
     assert warning is None
     assert entries
+
+
+def test_a_comment_before_the_arguments_is_not_the_callee():
+    samples = {
+        "java": (
+            "class A {\n  void alpha() {\n    foo /* why */ (x);\n  }\n}\n",
+            "class B {\n  void beta() {\n    foo(y);\n  }\n}\n",
+            "java",
+        ),
+        "typescript": (
+            "function alpha() {\n  foo /* why */ (x);\n}\n",
+            "function beta() {\n  foo(y);\n}\n",
+            "ts",
+        ),
+        "go": (
+            "package a\n\nfunc alpha() {\n\tfoo /* why */ (x)\n}\n",
+            "package a\n\nfunc beta() {\n\tfoo(y)\n}\n",
+            "go",
+        ),
+        "rust": (
+            "fn alpha() {\n    foo /* why */ (x);\n}\n",
+            "fn beta() {\n    foo(y);\n}\n",
+            "rs",
+        ),
+    }
+    for language, (commented, bare, suffix) in samples.items():
+        left = forms(language, commented, f"a.{suffix}")
+        right = forms(language, bare, f"b.{suffix}")
+        assert any('"foo"' in item for item in left[0].fingerprints), language
+        found = find_duplicates(left + right, threshold=0.0)
+        assert [item.score for item in found] == [1.0], language

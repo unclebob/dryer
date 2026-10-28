@@ -21,16 +21,16 @@ def _skipped_directory_text() -> str:
 HELP = f"""\
 Usage: dryer [options] [path-or-filter ...]
 
-Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and
-Python. Each form is normalized — call and method names, operators, and
-tree shape stay; local names, field names, and literals do not — and compared
-with the other forms of the same language. The score is Jaccard similarity of
+Find candidate duplicate code in Clojure, Java, Kotlin, Go, TypeScript,
+Rust, and Python. Each form is normalized — call and method names, operators,
+and tree shape stay; local names, field names, and literals do not — and
+compared with the other forms of the same language. The score is Jaccard similarity of
 those structural fingerprints, the same score as dry4clj.
 
 Prints a report and writes .metrics/dry.edn.
 
-Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
-TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
+Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Kotlin (.kt),
+Go (.go), TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
 
 Options:
   -h, --help                    Print this help and exit.
@@ -55,11 +55,15 @@ Arguments:
                     path contains this text are compared.
 
 With no paths, source files under the project root are compared. Directories
-named {_skipped_directory_text()} are skipped, as are *_test.go, *.test.cts,
-*.spec.cts, *.spec.ts, test_*.py, and *_test.py files.
+named {_skipped_directory_text()} are skipped, as are Gradle and Kotlin
+Multiplatform test source sets such as commonTest, jvmTest, testFixtures, and
+testData, and *_test.go, *.test.cts, *.spec.cts, *.spec.ts, test_*.py, and
+*_test.py files.
 
 Clojure compares every top-level form except ns. The other languages compare
 functions and methods. A form is only compared with forms in the same language.
+Kotlin inline functions are not compared, since their body is copied into each
+caller and crapper cannot score them.
 
 Exit codes:
   0  the report was written

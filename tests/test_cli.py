@@ -13,7 +13,7 @@ from dryer.cli import (
     run,
     select_files,
 )
-from dryer.discover import is_test_file, iter_source_files, language_of
+from dryer.discover import is_test_dir, is_test_file, iter_source_files, language_of
 
 
 def write_source(root: Path, name: str, text: str) -> None:
@@ -348,3 +348,54 @@ def test_a_second_report_replaces_the_snapshot(tmp_path, capsys):
     assert run(args) == 0
     assert run(args) == 0
     assert (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8") == "{:candidates []}\n"
+
+
+def test_a_claude_worktree_is_not_scanned(tmp_path):
+    write_source(tmp_path, "src/B.kt", "fun b() {}\n")
+    write_source(tmp_path, ".claude/worktrees/x/A.kt", "fun a() {}\n")
+    assert [path.name for path in iter_source_files([tmp_path])] == ["B.kt"]
+
+
+KOTLIN_PAIR = """\
+fun alpha(xs: List<Int>): List<Int> {
+    val ys = xs.filter { it > 0 }
+    return ys.map { it + 1 }
+}
+
+fun beta(items: List<Int>): List<Int> {
+    val kept = items.filter { it > 0 }
+    return kept.map { it + 1 }
+}
+"""
+
+
+def _reported_files(tmp_path, capsys, name: str) -> list[str]:
+    write_source(tmp_path, name, KOTLIN_PAIR)
+    capsys.readouterr()
+    assert run(["--root", str(tmp_path), "--min-lines", "1", "--min-nodes", "1"]) == 0
+    return [line.strip().rsplit(":", 1)[0] for line in capsys.readouterr().out.splitlines() if line.startswith("  ")]
+
+
+def test_a_gradle_test_source_set_is_not_compared(tmp_path, capsys):
+    assert _reported_files(tmp_path, capsys, "src/commonTest/kotlin/PathTest.kt") == []
+    assert _reported_files(tmp_path, capsys, "core/jvmTest/src/PathTest.kt") == []
+
+
+def test_a_main_source_set_is_compared(tmp_path, capsys):
+    path = "src/commonMain/kotlin/Path.kt"
+    assert _reported_files(tmp_path, capsys, path) == [path, path]
+
+
+def test_a_testing_package_and_module_are_read(tmp_path, capsys):
+    package = "src/main/kotlin/okio/testing/Fake.kt"
+    assert _reported_files(tmp_path, capsys, package) == [package, package]
+    module = "okio-testing-support/src/Fake.kt"
+    assert _reported_files(tmp_path / "module", capsys, module) == [module, module]
+
+
+def test_a_source_set_name_is_a_test_dir():
+    for name in ["commonTest", "jvmTest", "jsTest", "androidTest", "androidUnitTest",
+                 "testFixtures", "functionalTest", "testData", "integrationTests"]:
+        assert is_test_dir(name), name
+    for name in ["testing", "okio-testing-support", "commonMain", "latest", "contest", "Test"]:
+        assert not is_test_dir(name), name
