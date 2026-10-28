@@ -290,6 +290,51 @@ def test_a_bare_colon_is_an_empty_keyword():
     assert forms == []
 
 
+def test_a_hash_inside_a_keyword_does_not_start_a_tagged_literal():
+    forms, warning = read_source("[:div#id (f x)]\n")
+    assert warning is None
+    assert forms[0].items[0].name == "div#id"
+    assert pr(normalize(forms[0])) == '[:vector :keyword [:list [:symbol "f"] :symbol]]'
+
+
+def test_auto_gensyms_and_primes_are_symbols():
+    forms, warning = read_source("`(let [r# 1] r#)\nx'\n")
+    assert warning is None
+    assert forms[0].items[1].items[2].name == "r#"
+    assert forms[1].name == "x'"
+
+
+def test_a_colon_inside_a_keyword_is_part_of_it():
+    forms, warning = read_source("{:a:b 1 ::c 2}\n")
+    assert warning is None
+    assert [pair[0].name for pair in forms[0].pairs] == ["a:b", "c"]
+
+
+def test_every_terminating_macro_ends_a_token():
+    forms, warning = read_source('[a;c\n b\\c d(e)f[g]h{}i"s"j@k l^{} n o`p q~r \\# \\\' \\:]\n')
+    assert warning is None
+    assert forms[0].items[0].name == "a"
+    assert pr(normalize(forms[0])) == (
+        "[:vector :symbol :symbol :literal"
+        ' :symbol [:list [:symbol "e"]] :symbol [:vector :symbol] :symbol [:map]'
+        ' :symbol :literal :symbol [:list [:symbol "deref"] :symbol]'
+        ' :symbol :symbol :symbol [:list [:symbol "syntax-quote"] :symbol]'
+        ' :symbol [:list [:symbol "unquote"] :symbol] :literal :literal :literal]'
+    )
+
+
+def test_var_quote_wraps_the_name_in_var():
+    forms, warning = read_source("(#'foo x)\n")
+    assert warning is None
+    assert pr(normalize(forms[0])) == '[:list [:list [:symbol "var"] :symbol] :symbol]'
+
+
+def test_symbolic_values_are_literals():
+    forms, warning = read_source("[##Inf x]\n")
+    assert warning is None
+    assert [type(item).__name__ for item in forms[0].items] == ["Lit", "Sym"]
+
+
 def test_namespaced_maps_keep_the_map():
     for source in ("#:foo{:a 1}\n", "#::{:a 1}\n", "#:{:a 1}\n"):
         forms, warning = read_source(source)

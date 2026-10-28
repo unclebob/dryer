@@ -16,7 +16,7 @@ import re
 from dryer.shape import K
 
 _WHITESPACE = set(" \t\n\r,")
-_TERMINATORS = set("()[]{}\";'@^`~\\,#:")
+_TERMINATORS = set("()[]{}\";@^`~\\")
 _COLLECTIONS = {"(": (")", "list"), "[": ("]", "vector"), "{": ("}", "map")}
 _WRAPPERS = {"'": "quote", "@": "deref", "`": "syntax-quote"}
 _ATOMS = set("\"\\:")
@@ -311,6 +311,15 @@ class Reader:
         self.read_string()
         return Lit(line)
 
+    def _dispatch_var(self, stack: list[tuple], line: int):
+        self.get()
+        stack.append(("wrap", "var", line))
+        return _NEED
+
+    def _dispatch_symbolic(self, _stack: list[tuple], line: int):
+        self.read_token()
+        return Lit(line)
+
     def _dispatch_cond(self, stack: list[tuple], _line: int):
         self.get()
         splicing = self.peek() == "@"
@@ -354,6 +363,8 @@ _DISPATCH = {
     "{": Reader._dispatch_set,
     "(": Reader._dispatch_fn,
     '"': Reader._dispatch_string,
+    "'": Reader._dispatch_var,
+    "#": Reader._dispatch_symbolic,
     "?": Reader._dispatch_cond,
     ":": Reader._dispatch_map,
 }
