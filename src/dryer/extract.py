@@ -143,12 +143,52 @@ def _rust_nodes(data: bytes, root) -> list:
     return found
 
 
+_DART_SIGNATURES = {"function_signature", "getter_signature", "setter_signature"}
+_DART_BETWEEN = {"comment", "documentation_comment", "annotation"}
+_DART_GENERATIVE = {
+    "constructor_signature",
+    "constant_constructor_signature",
+    "redirecting_factory_constructor_signature",
+}
+
+
+def _dart_signature(node) -> bool:
+    if node.type == "method_signature":
+        first = next((child for child in node.named_children), None)
+        return first is not None and first.type not in _DART_GENERATIVE
+    return node.type in _DART_SIGNATURES and node.parent.type != "method_signature"
+
+
+def _dart_body(signature):
+    current = signature.next_sibling
+    while current is not None and current.type in _DART_BETWEEN:
+        current = current.next_sibling
+    if current is not None and current.type == "function_body":
+        return current
+    return None
+
+
+def _dart_nodes(data: bytes, root) -> list:
+    """The functions crapper scores, as (body, signature): Dart keeps them as
+    siblings. Generative constructors, locals, and closures are not entries."""
+
+    found = []
+    for node in descendants(root):
+        if not _dart_signature(node) or _inside(node, {"function_body", "function_expression"}):
+            continue
+        body = _dart_body(node)
+        if body is not None:
+            found.append((body, node))
+    return found
+
+
 _PICKERS = {
     "java": ("java", _java_nodes),
     "go": ("go", _go_nodes),
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "dart": ("dart", _dart_nodes),
 }
 
 
@@ -157,7 +197,8 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
     grammar = grammar_or_name(path) if callable(grammar_or_name) else grammar_or_name
     data, tree = parse(source, grammar)
     entries = []
-    for node in pick(data, tree.root_node):
+    for picked in pick(data, tree.root_node):
+        node, first = picked if isinstance(picked, tuple) else (picked, picked)
         normalized = normalize(node, data)
         if normalized is None:
             continue
@@ -165,7 +206,7 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
             Entry(
                 language=language,
                 file=file,
-                start_line=start_line(node),
+                start_line=start_line(first),
                 end_line=end_line(node),
                 nodes=node_count(normalized),
                 fingerprints=fingerprints(normalized),

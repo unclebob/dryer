@@ -10,7 +10,7 @@ their locals differ.
 from __future__ import annotations
 
 from dryer.shape import K
-from dryer.treesitter import node_text
+from dryer.treesitter import child_of_type, node_text
 
 _SKIP = {
     "comment",
@@ -135,6 +135,9 @@ _SCOPED = {
 }
 
 _ARG_LISTS = {"argument_list", "arguments"}
+_INTERPOLATIONS = {"interpolation", "template_substitution"}
+# Dart spells some operators as named leaves, which carry no token child.
+_OPERATOR_LEAVES = {"additive_operator", "equality_operator", "minus_operator"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
 _DATA: bytes = b""
@@ -158,7 +161,9 @@ _PENDING = object()
 def _is_literal(node) -> bool:
     if node.type not in _LITERALS:
         return False
-    if node.type == "string" and any(child.type == "interpolation" for child in node.children):
+    if node.type in {"string", "string_literal"} and any(
+        child.type in _INTERPOLATIONS for child in node.children
+    ):
         return False
     return True
 
@@ -184,9 +189,47 @@ def _callee_leaf(node):
     return _PENDING
 
 
+_DART_MEMBERS = {
+    "unconditional_assignable_selector",
+    "conditional_assignable_selector",
+    "cascade_selector",
+}
+
+
+def _dart_called(node) -> bool:
+    """Dart calls are flat: the name, then a `selector` holding the arguments."""
+
+
+def _dart_holder(node):
+    """The node whose next sibling holds the arguments: `.name` sits in a
+    `selector`, except after `super` and in a cascade."""
+
+    parent = node.parent
+    if parent is None or parent.type not in _DART_MEMBERS:
+        return node
+    if parent.parent is not None and parent.parent.type == "selector":
+        return parent.parent
+    return parent
+
+
+def _has_arguments(node) -> bool:
+    if node is None:
+        return False
+    return node.type == "argument_part" or child_of_type(node, "argument_part") is not None
+
+
+def _dart_called(node) -> bool:
+    """Dart calls are flat: the name, then a `selector` holding the arguments.
+    `const A.b(...)` keeps both names."""
+
+    if node.parent is not None and node.parent.type == "const_object_expression":
+        return True
+    return _has_arguments(_dart_holder(node).next_named_sibling)
+
+
 def _named_leaf(node, head: bool):
     if node.type in _IDENTIFIERS:
-        if head:
+        if head or _dart_called(node):
             return [K("symbol"), _text(node)]
         return K("symbol")
     if _is_literal(node):
@@ -205,6 +248,8 @@ def _try_leaf(node, mode: str, head: bool):
         return [K("symbol"), node.type]
     if not node.is_named:
         return None
+    if node.type in _OPERATOR_LEAVES:
+        return [K("symbol"), _text(node)]
     return _named_leaf(node, head)
 
 
