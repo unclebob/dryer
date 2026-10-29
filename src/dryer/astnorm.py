@@ -51,6 +51,8 @@ _LITERALS = {
     "float_literal",
     "imaginary_literal",
     "integer_literal",
+    "real_literal",
+    "verbatim_string_literal",
     "true",
     "false",
     "null",
@@ -106,6 +108,7 @@ _OPERATORS = {
     "or",
     "not",
     "??",
+    "??=",
     "?.",
     "=",
     ":=",
@@ -118,12 +121,16 @@ _CALLS = {
     "call_expression",
     "method_invocation",
     "object_creation_expression",
+    "implicit_object_creation_expression",
+    "invocation_expression",
     "new_expression",
 }
 
 _ATTRIBUTES = {
     "attribute",
     "member_expression",
+    "member_access_expression",
+    "member_binding_expression",
     "selector_expression",
     "field_access",
     "field_expression",
@@ -132,10 +139,14 @@ _ATTRIBUTES = {
 _SCOPED = {
     "scoped_identifier",
     "scoped_type_identifier",
+    "qualified_name",
 }
 
+# A name with type arguments: Java's `ArrayList<String>`, C#'s `List<string>` and `Foo<T>()`.
+_GENERIC = {"generic_type", "generic_name"}
+
 _ARG_LISTS = {"argument_list", "arguments"}
-_TYPE_ARGS = {"type_arguments", "type_parameters"}
+_TYPE_ARGS = {"type_arguments", "type_parameters", "type_argument_list", "type_parameter_list"}
 
 _DATA: bytes = b""
 
@@ -242,7 +253,7 @@ def _path_jobs(node):
     for child in node.named_children:
         if child.type in _IDENTIFIERS:
             continue
-        if child.type in _SCOPED or child.type == "generic_type":
+        if child.type in _SCOPED or child.type in _GENERIC:
             jobs.append((child, "path", False))
         else:
             jobs.append((child, "norm", False))
@@ -252,7 +263,7 @@ def _path_jobs(node):
 def _callee_jobs(node):
     if node.type in _ATTRIBUTES:
         return _attr_jobs(node, True)
-    if node.type in _SCOPED or node.type == "generic_type":
+    if node.type in _SCOPED or node.type in _GENERIC:
         return _path_jobs(node)
     return [(node, "norm", True)]
 
@@ -328,7 +339,7 @@ def _assemble_path(node, cache):
     for child in node.named_children:
         if child.type in _IDENTIFIERS:
             parts.append([K("symbol"), _text(child)])
-        elif child.type in _SCOPED or child.type == "generic_type":
+        elif child.type in _SCOPED or child.type in _GENERIC:
             parts.append(cache[(id(child), "path", False)])
         else:
             norm = cache[(id(child), "norm", False)]
@@ -340,7 +351,7 @@ def _assemble_path(node, cache):
 def _callee_value(node, cache):
     if node.type in _ATTRIBUTES:
         return _assemble_attr(node, True, cache)
-    if node.type in _SCOPED or node.type == "generic_type":
+    if node.type in _SCOPED or node.type in _GENERIC:
         return _assemble_path(node, cache)
     return cache[(id(node), "norm", True)]
 

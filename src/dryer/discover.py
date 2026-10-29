@@ -21,6 +21,7 @@ EXTENSIONS = {
     ".cts": "typescript",
     ".rs": "rust",
     ".py": "python",
+    ".cs": "csharp",
 }
 
 SKIP_DIRS = {
@@ -41,9 +42,13 @@ SKIP_DIRS = {
     "testdata",
     "__pycache__",
     ".clj-kondo",
+    "obj",  # .NET writes generated .cs files here (AssemblyInfo, GlobalUsings)
 }
 
 TEST_DIRS = {"test", "tests", "spec", "specs", "__tests__"}
+# xUnit, NUnit, and MSTest projects follow the `Thing.Tests` / `ThingTests.cs` convention.
+CSHARP_TEST_SUFFIXES = ("Tests.cs", "Test.cs")
+CSHARP_TEST_DIR_SUFFIXES = (".Tests", ".Test")
 
 
 def language_of(path: str | Path) -> str | None:
@@ -77,6 +82,10 @@ def is_test_file(path: str | Path) -> bool:
     if name == "conftest.py":
         return True
     if name.endswith("_test.py") or (name.startswith("test_") and name.endswith(".py")):
+        return True
+    if name.endswith(CSHARP_TEST_SUFFIXES):
+        return True
+    if file_path.suffix == ".cs" and any(part.endswith(CSHARP_TEST_DIR_SUFFIXES) for part in file_path.parts):
         return True
     return any(part in TEST_DIRS for part in file_path.parts)
 

@@ -30,6 +30,7 @@ def test_language_detection():
     assert language_of("ui/view.tsx") == "typescript"
     assert language_of("src/lib.rs") == "rust"
     assert language_of("src/dryer/cli.py") == "python"
+    assert language_of("src/Host/Program.cs") == "csharp"
     assert language_of("types.d.ts") is None
     assert language_of("notes.md") is None
 
@@ -171,10 +172,14 @@ def test_names_that_are_tests():
         "pkg/foo_test.py",
         "pkg/test_foo.py",
         "tests/app.py",
+        "src/Host/ProgramTests.cs",
+        "src/Host/ProgramTest.cs",
+        "src/Host.Tests/Fixture.cs",
     ]
     for name in names:
         assert is_test_file(name), name
     assert not is_test_file("src/app.py")
+    assert not is_test_file("src/Host/Program.cs")
 
 
 def _init_repo(path: Path) -> None:
@@ -338,8 +343,10 @@ def test_test_files_and_skipped_directories_are_left_out(tmp_path):
     write_source(tmp_path, "src/app.test.cts", "export {}\n")
     write_source(tmp_path, "src/app.spec.cts", "export {}\n")
     write_source(tmp_path, "src/widget.cts", "export {}\n")
+    write_source(tmp_path, "src/Host/Program.cs", "class P { }\n")
+    write_source(tmp_path, "src/Host/obj/Host.AssemblyInfo.cs", "class A { }\n")
     relative = [path.relative_to(tmp_path).as_posix() for path in iter_source_files([tmp_path])]
-    assert sorted(relative) == ["src/app.py", "src/widget.cts"]
+    assert sorted(relative) == ["src/Host/Program.cs", "src/app.py", "src/widget.cts"]
 
 
 def test_a_second_report_replaces_the_snapshot(tmp_path, capsys):

@@ -21,8 +21,8 @@ def _skipped_directory_text() -> str:
 HELP = f"""\
 Usage: dryer [options] [path-or-filter ...]
 
-Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and
-Python. Each form is normalized — call and method names, operators, and
+Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python,
+and C#. Each form is normalized — call and method names, operators, and
 tree shape stay; local names, field names, and literals do not — and compared
 with the other forms of the same language. The score is Jaccard similarity of
 those structural fingerprints, the same score as dry4clj.
@@ -30,7 +30,7 @@ those structural fingerprints, the same score as dry4clj.
 Prints a report and writes .metrics/dry.edn.
 
 Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
-TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
+TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py), C# (.cs).
 
 Options:
   -h, --help                    Print this help and exit.
@@ -56,7 +56,8 @@ Arguments:
 
 With no paths, source files under the project root are compared. Directories
 named {_skipped_directory_text()} are skipped, as are *_test.go, *.test.cts,
-*.spec.cts, *.spec.ts, test_*.py, and *_test.py files.
+*.spec.cts, *.spec.ts, test_*.py, *_test.py, *Tests.cs, and *Test.cs files, and
+.cs files inside a *.Tests project.
 
 Clojure compares every top-level form except ns. The other languages compare
 functions and methods. A form is only compared with forms in the same language.

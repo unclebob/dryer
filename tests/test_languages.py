@@ -111,6 +111,24 @@ pub fn beta(items: Vec<i32>) -> Vec<i32> {
 }
 """
 
+CS_LEFT = """\
+class Left {
+  int[] Alpha(int[] xs) {
+    int[] ys = Filter(xs, odd);
+    return Map(ys, inc);
+  }
+}
+"""
+
+CS_RIGHT = """\
+class Right {
+  int[] Beta(int[] items) {
+    int[] kept = Filter(items, even);
+    return Map(kept, dec);
+  }
+}
+"""
+
 
 def test_each_language_matches_renamed_locals(tmp_path):
     samples = {
@@ -126,6 +144,8 @@ def test_each_language_matches_renamed_locals(tmp_path):
         "right.tsx": TSX_RIGHT,
         "left.rs": RUST_LEFT,
         "right.rs": RUST_RIGHT,
+        "left.cs": CS_LEFT,
+        "right.cs": CS_RIGHT,
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -133,7 +153,7 @@ def test_each_language_matches_renamed_locals(tmp_path):
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"java", "go", "python", "typescript", "rust"}
+    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "csharp"}
     assert [(item.left.file, item.right.file) for item in by_language["typescript"]] == [
         ("left.ts", "right.ts"),
         ("left.tsx", "right.tsx"),
@@ -237,7 +257,7 @@ class Right {
 
 
 def _suffix(language: str) -> str:
-    return {"python": "py", "go": "go", "rust": "rs", "java": "java", "typescript": "ts"}[language]
+    return {"python": "py", "go": "go", "rust": "rs", "java": "java", "typescript": "ts", "csharp": "cs"}[language]
 
 
 def test_callee_names_stay_and_member_names_do_not(tmp_path):
@@ -308,6 +328,24 @@ export function beta(items: number[]): number {
   return foo<number>(items.baz);
 }
 """,
+        "left.cs": """\
+class Left {
+  int Alpha(List<int> xs) {
+    var ys = new List<string>();
+    ys.Add(xs);
+    return Foo<string>(xs.Total) + System.Math.Abs(xs.Count);
+  }
+}
+""",
+        "right.cs": """\
+class Right {
+  int Beta(List<int> items) {
+    var kept = new List<int>();
+    kept.Add(items);
+    return Foo<int>(items.Count) + System.Math.Abs(items.Size);
+  }
+}
+""",
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -315,7 +353,7 @@ export function beta(items: number[]): number {
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"python", "go", "rust", "java", "typescript"}
+    assert set(by_language) == {"python", "go", "rust", "java", "typescript", "csharp"}
     for language, group in by_language.items():
         assert [(item.left.file, item.right.file, item.score) for item in group] == [
             (f"left.{_suffix(language)}", f"right.{_suffix(language)}", 1.0)
@@ -520,6 +558,40 @@ xs.map((item: number) => item + 1);
 """,
         "a.ts",
     ) == [(2, 4), (6, 12)]
+
+
+def test_csharp_keeps_methods_with_a_body_and_folds_lambdas_and_local_functions():
+    assert spans(
+        "csharp",
+        """\
+namespace Demo;
+public abstract class Left
+{
+    public Left() { var x = 1; }
+    public abstract int Declared(int[] xs);
+    public int Alpha(int[] xs)
+    {
+        Func<int, int> inc = x => x + 1;
+        int Local(int y) { return y; }
+        return Local(inc(xs.Length));
+    }
+    public int Beta(int[] xs) => xs.Length;
+}
+public interface IShape { int Size(); int Area() => 1; }
+""",
+        "a.cs",
+    ) == [(6, 11), (12, 12), (14, 14)]
+
+
+def test_a_different_csharp_callee_or_constructed_type_lowers_the_score():
+    left = forms("csharp", "class L { int A(int[] xs) { return new List<int>(xs).Count(); } }\n", "a.cs")
+    right = forms("csharp", "class R { int B(int[] items) { return new HashSet<int>(items).Count(); } }\n", "b.cs")
+    other = forms("csharp", "class O { int C(int[] items) { return new List<int>(items).Sum(); } }\n", "c.cs")
+    assert "List" in " ".join(left[0].fingerprints)
+    for pair in (left + right, left + other):
+        found = find_duplicates(pair, threshold=0.0)
+        assert len(found) == 1
+        assert found[0].score < 1.0
 
 
 def test_a_private_field_name_is_not_part_of_the_structure():

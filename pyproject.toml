@@ -1,7 +1,7 @@
 [project]
 name = "dryer"
 version = "0.1.0"
-description = "Structural duplicate finder for Clojure, Java, Go, TypeScript, Rust, and Python."
+description = "Structural duplicate finder for Clojure, Java, Go, TypeScript, Rust, Python, and C#."
 readme = "README.md"
 license = { file = "LICENSE" }
 classifiers = ["License :: OSI Approved :: Zero-Clause BSD (0BSD)"]

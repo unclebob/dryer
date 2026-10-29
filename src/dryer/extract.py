@@ -3,7 +3,8 @@
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
-functions inside `mod tests` are test code and are skipped.
+functions inside `mod tests` are test code and are skipped. A C# method's body
+is a block or an `=> expression`; its lambdas and local functions stay inside.
 """
 
 from __future__ import annotations
@@ -143,12 +144,21 @@ def _rust_nodes(data: bytes, root) -> list:
     return found
 
 
+def _csharp_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if node.type == "method_declaration" and node.child_by_field_name("body") is not None:
+            found.append(node)
+    return found
+
+
 _PICKERS = {
     "java": ("java", _java_nodes),
     "go": ("go", _go_nodes),
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "csharp": ("csharp", _csharp_nodes),
 }
 
 
