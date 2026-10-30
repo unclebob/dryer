@@ -29,6 +29,7 @@ def test_language_detection():
     assert language_of("board.go") == "go"
     assert language_of("ui/view.tsx") == "typescript"
     assert language_of("src/lib.rs") == "rust"
+    assert language_of("src/Domain/Lease.hs") == "haskell"
     assert language_of("src/dryer/cli.py") == "python"
     assert language_of("types.d.ts") is None
     assert language_of("notes.md") is None
@@ -170,11 +171,15 @@ def test_names_that_are_tests():
         "tests/conftest.py",
         "pkg/foo_test.py",
         "pkg/test_foo.py",
+        "test/Lease.hs",
+        "src/LeaseSpec.hs",
+        "src/LeaseTest.hs",
         "tests/app.py",
     ]
     for name in names:
         assert is_test_file(name), name
     assert not is_test_file("src/app.py")
+    assert not is_test_file("src/Lease.hs")
 
 
 def _init_repo(path: Path) -> None:

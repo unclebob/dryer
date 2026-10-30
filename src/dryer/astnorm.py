@@ -28,6 +28,8 @@ _IDENTIFIERS = {
     "shorthand_property_identifier",
     "shorthand_property_identifier_pattern",
     "package_identifier",
+    "variable",
+    "constructor",
 }
 
 _LITERALS = {
@@ -59,6 +61,7 @@ _LITERALS = {
     "undefined",
     "null_literal",
     "boolean_literal",
+    "literal",
     "template_string",
     "regex",
     "regex_literal",
@@ -140,6 +143,12 @@ _TYPE_ARGS = {"type_arguments", "type_parameters"}
 _DATA: bytes = b""
 
 
+def _node_id(node) -> int:
+    """Stable tree-sitter identity across freshly wrapped child nodes."""
+
+    return node.id
+
+
 def normalize(node, data: bytes):
     """Normalized tree for `node`, or None when the node is only punctuation."""
 
@@ -185,6 +194,8 @@ def _callee_leaf(node):
 
 
 def _named_leaf(node, head: bool):
+    if node.type in {"operator", "constructor_operator"}:
+        return [K("symbol"), _text(node)]
     if node.type in _IDENTIFIERS:
         if head:
             return [K("symbol"), _text(node)]
@@ -257,6 +268,17 @@ def _callee_jobs(node):
     return [(node, "norm", True)]
 
 
+def _haskell_apply_jobs(node):
+    function = node.child_by_field_name("function")
+    argument = node.child_by_field_name("argument")
+    jobs = []
+    if function is not None:
+        jobs.append((function, "callee", False))
+    if argument is not None:
+        jobs.append((argument, "norm", False))
+    return jobs
+
+
 def _jobs(node, mode: str, head: bool):
     if mode == "callee":
         return _callee_jobs(node)
@@ -264,6 +286,8 @@ def _jobs(node, mode: str, head: bool):
         return _path_jobs(node)
     if node.type == "parenthesized_expression" and len(node.named_children) == 1:
         return [(node.named_children[0], "norm", head)]
+    if node.type == "apply":
+        return _haskell_apply_jobs(node)
     if node.type in _CALLS:
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
@@ -279,8 +303,8 @@ def _name_value(name, head: bool, cache):
             return [K("symbol"), _text(name)]
         return K("symbol")
     if head:
-        return cache[(id(name), "callee", False)]
-    return cache[(id(name), "norm", False)]
+        return cache[(_node_id(name), "callee", False)]
+    return cache[(_node_id(name), "norm", False)]
 
 
 def _assemble_call(node, cache):
@@ -290,16 +314,16 @@ def _assemble_call(node, cache):
     if rest:
         *receivers, callee = rest
         for child in receivers:
-            norm = cache[(id(child), "norm", False)]
+            norm = cache[(_node_id(child), "norm", False)]
             if norm is not None:
                 out.append(norm)
-        out.append(cache[(id(callee), "callee", False)])
+        out.append(cache[(_node_id(callee), "callee", False)])
     for child in type_args:
-        norm = cache[(id(child), "norm", False)]
+        norm = cache[(_node_id(child), "norm", False)]
         if norm is not None:
             out.append(norm)
     if args is not None:
-        norm = cache[(id(args), "norm", False)]
+        norm = cache[(_node_id(args), "norm", False)]
         if norm is not None:
             out.append(norm)
     return out
@@ -312,7 +336,7 @@ def _assemble_attr(node, head: bool, cache):
     *objects, name = named
     parts = [K(node.type)]
     for obj in objects:
-        norm = cache[(id(obj), "norm", False)]
+        norm = cache[(_node_id(obj), "norm", False)]
         if norm is not None:
             parts.append(norm)
     nested = _name_value(name, head, cache)
@@ -329,9 +353,9 @@ def _assemble_path(node, cache):
         if child.type in _IDENTIFIERS:
             parts.append([K("symbol"), _text(child)])
         elif child.type in _SCOPED or child.type == "generic_type":
-            parts.append(cache[(id(child), "path", False)])
+            parts.append(cache[(_node_id(child), "path", False)])
         else:
-            norm = cache[(id(child), "norm", False)]
+            norm = cache[(_node_id(child), "norm", False)]
             if norm is not None:
                 parts.append(norm)
     return parts
@@ -342,16 +366,27 @@ def _callee_value(node, cache):
         return _assemble_attr(node, True, cache)
     if node.type in _SCOPED or node.type == "generic_type":
         return _assemble_path(node, cache)
-    return cache[(id(node), "norm", True)]
+    return cache[(_node_id(node), "norm", True)]
 
 
 def _assemble_children(node, cache):
     children = []
     for child in node.children:
-        norm = cache[(id(child), "norm", False)]
+        norm = cache[(_node_id(child), "norm", False)]
         if norm is not None:
             children.append(norm)
     return [K(node.type), *children]
+
+
+def _assemble_haskell_apply(node, cache):
+    parts = [K("apply")]
+    function = node.child_by_field_name("function")
+    argument = node.child_by_field_name("argument")
+    if function is not None:
+        parts.append(cache[(_node_id(function), "callee", False)])
+    if argument is not None:
+        parts.append(cache[(_node_id(argument), "norm", False)])
+    return parts
 
 
 def _assemble(node, mode: str, head: bool, cache):
@@ -361,7 +396,9 @@ def _assemble(node, mode: str, head: bool, cache):
         return _assemble_path(node, cache)
     if node.type == "parenthesized_expression" and len(node.named_children) == 1:
         child = node.named_children[0]
-        return cache[(id(child), "norm", head)]
+        return cache[(_node_id(child), "norm", head)]
+    if node.type == "apply":
+        return _assemble_haskell_apply(node, cache)
     if node.type in _CALLS:
         return _assemble_call(node, cache)
     if node.type in _ATTRIBUTES:
@@ -375,7 +412,7 @@ def _normalize(node, head: bool = False):
     stack = [(node, "norm", head, False)]
     while stack:
         current, mode, is_head, expanded = stack.pop()
-        key = (id(current), mode, is_head)
+        key = (_node_id(current), mode, is_head)
         if not expanded:
             if key in cache:
                 continue
@@ -388,4 +425,4 @@ def _normalize(node, head: bool = False):
                 stack.append((child, child_mode, child_head, False))
             continue
         cache[key] = _assemble(current, mode, is_head, cache)
-    return cache[(id(node), "norm", head)]
+    return cache[(_node_id(node), "norm", head)]

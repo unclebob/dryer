@@ -111,6 +111,22 @@ pub fn beta(items: Vec<i32>) -> Vec<i32> {
 }
 """
 
+HASKELL_LEFT = """\
+module Left where
+
+alpha xs =
+  let ys = filter odd xs
+  in map inc ys
+"""
+
+HASKELL_RIGHT = """\
+module Right where
+
+beta items =
+  let kept = filter even items
+  in map dec kept
+"""
+
 
 def test_each_language_matches_renamed_locals(tmp_path):
     samples = {
@@ -126,6 +142,8 @@ def test_each_language_matches_renamed_locals(tmp_path):
         "right.tsx": TSX_RIGHT,
         "left.rs": RUST_LEFT,
         "right.rs": RUST_RIGHT,
+        "left.hs": HASKELL_LEFT,
+        "right.hs": HASKELL_RIGHT,
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -133,13 +151,33 @@ def test_each_language_matches_renamed_locals(tmp_path):
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"java", "go", "python", "typescript", "rust"}
+    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "haskell"}
     assert [(item.left.file, item.right.file) for item in by_language["typescript"]] == [
         ("left.ts", "right.ts"),
         ("left.tsx", "right.tsx"),
     ]
     for language, group in by_language.items():
         assert all(item.score == 1.0 for item in group), language
+
+
+def test_haskell_keeps_callee_and_operator_names(tmp_path):
+    write_source(
+        tmp_path,
+        "a.hs",
+        "module A where\nalpha xs = filter odd xs <> map inc xs\n",
+    )
+    write_source(
+        tmp_path,
+        "b.hs",
+        "module B where\nbeta items = select even items <> map dec items\n",
+    )
+    files = sorted(tmp_path.glob("*.hs"))
+    entries, warnings = scan_files(files, tmp_path, min_lines=1, min_nodes=1)
+    assert warnings == []
+    found = find_duplicates(entries, threshold=0.0)
+    assert len(found) == 1
+    assert found[0].language == "haskell"
+    assert found[0].score < 1.0
 
 
 def test_different_callee_is_not_the_same_structure(tmp_path):
