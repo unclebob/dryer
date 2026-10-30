@@ -21,6 +21,7 @@ EXTENSIONS = {
     ".cts": "typescript",
     ".rs": "rust",
     ".py": "python",
+    ".php": "php",
 }
 
 SKIP_DIRS = {
@@ -57,7 +58,7 @@ def language_of(path: str | Path) -> str | None:
 def is_test_file(path: str | Path) -> bool:
     file_path = Path(path)
     name = file_path.name
-    if name.endswith("_test.go"):
+    if name.endswith("_test.go") or name.endswith("Test.php"):
         return True
     if name.endswith(("_test.clj", "_test.cljc", "_test.cljs", "_test.cljd", "_test.bb")):
         return True
