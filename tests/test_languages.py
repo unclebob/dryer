@@ -180,6 +180,26 @@ def test_haskell_keeps_callee_and_operator_names(tmp_path):
     assert found[0].score < 1.0
 
 
+def test_haskell_compares_no_argument_bindings(tmp_path):
+    write_source(
+        tmp_path,
+        "a.hs",
+        "module A where\nalpha = fetch >>= store\n",
+    )
+    write_source(
+        tmp_path,
+        "b.hs",
+        "module B where\nbeta = fetch >>= store\n",
+    )
+    entries, warnings = scan_files(
+        sorted(tmp_path.glob("*.hs")), tmp_path, min_lines=1, min_nodes=1
+    )
+    assert warnings == []
+    found = find_duplicates(entries, threshold=1.0)
+    assert len(found) == 1
+    assert found[0].language == "haskell"
+
+
 def test_different_callee_is_not_the_same_structure(tmp_path):
     write_source(
         tmp_path,

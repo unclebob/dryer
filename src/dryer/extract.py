@@ -4,7 +4,7 @@ Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
 functions inside `mod tests` are test code and are skipped. Haskell compares
-top-level and instance function equations while leaving local bindings out.
+top-level and instance function equations or bindings while leaving local bindings out.
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ def _haskell_nodes(data: bytes, root) -> list:
 
     found = []
     for node in descendants(root):
-        if node.type != "function":
+        if node.type not in {"function", "bind"}:
             continue
         if _inside(node, {"function", "bind"}):
             continue
