@@ -29,9 +29,9 @@ def body(text: str) -> str:
 
 
 def test_php_files_and_tests_are_found(tmp_path):
-    assert language_of("app/Survey/Board.php") == "php"
-    assert is_test_file("app/Survey/BoardTest.php") is True
-    assert is_test_file("app/Survey/Board.php") is False
+    assert language_of("app/Foo/Bar.php") == "php"
+    assert is_test_file("app/Foo/BarTest.php") is True
+    assert is_test_file("app/Foo/Bar.php") is False
     write_source(
         tmp_path,
         "app/Left.php",
@@ -133,7 +133,7 @@ function helper($xs)
 def test_a_method_with_an_empty_body_is_not_a_candidate():
     source = """\
 <?php
-final class SurveyInput
+final class FooInput
 {
     public function __construct(
         public readonly string $name,
