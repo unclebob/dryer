@@ -4,7 +4,7 @@ Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
 functions inside `mod tests` are test code and are skipped. PHP methods of an
-anonymous class stay inside the enclosing function, as in Java. A PHP function
+anonymous class stay inside the enclosing function. A PHP function
 or method with an empty body only declares, so it is not a candidate.
 """
 
