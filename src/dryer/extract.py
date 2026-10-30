@@ -3,7 +3,9 @@
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
-functions inside `mod tests` are test code and are skipped.
+functions inside `mod tests` are test code and are skipped. PHP methods of an
+anonymous class stay inside the enclosing function. A PHP function
+or method with an empty body only declares, so it is not a candidate.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ _TS_FUNCTION = {
     "arrow_function",
     "function_expression",
 }
+_PHP_FUNCTION = {"function_definition", "method_declaration"}
 _DEFINITION_PARENTS = {
     "variable_declarator",
     "public_field_definition",
@@ -130,6 +133,27 @@ def _typescript_nodes(data: bytes, root) -> list:
     return found
 
 
+def _php_has_statements(node) -> bool:
+    """False for `{}`, as in a constructor that only promotes its parameters."""
+
+    body = child_of_type(node, "compound_statement")
+    if body is None:
+        return False
+    return any(child.type != "comment" for child in body.named_children)
+
+
+def _php_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if not _php_has_statements(node):
+            continue
+        if node.type == "method_declaration" and not _inside(node, {"anonymous_class"}):
+            found.append(node)
+        elif node.type == "function_definition" and not _inside(node, _PHP_FUNCTION):
+            found.append(node)
+    return found
+
+
 def _rust_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
@@ -149,6 +173,7 @@ _PICKERS = {
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "php": ("php", _php_nodes),
 }
 
 

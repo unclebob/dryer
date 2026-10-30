@@ -28,6 +28,8 @@ _IDENTIFIERS = {
     "shorthand_property_identifier",
     "shorthand_property_identifier_pattern",
     "package_identifier",
+    "name",
+    "variable_name",
 }
 
 _LITERALS = {
@@ -62,6 +64,9 @@ _LITERALS = {
     "template_string",
     "regex",
     "regex_literal",
+    "boolean",
+    "encapsed_string",
+    "nowdoc",
 }
 
 _OPERATORS = {
@@ -119,6 +124,10 @@ _CALLS = {
     "method_invocation",
     "object_creation_expression",
     "new_expression",
+    "function_call_expression",
+    "member_call_expression",
+    "nullsafe_member_call_expression",
+    "scoped_call_expression",
 }
 
 _ATTRIBUTES = {
@@ -127,14 +136,21 @@ _ATTRIBUTES = {
     "selector_expression",
     "field_access",
     "field_expression",
+    "member_access_expression",
+    "nullsafe_member_access_expression",
+    "scoped_property_access_expression",
+    "class_constant_access_expression",
 }
 
 _SCOPED = {
     "scoped_identifier",
     "scoped_type_identifier",
+    "qualified_name",
 }
 
 _ARG_LISTS = {"argument_list", "arguments"}
+# A PHP double-quoted string is plain text unless it holds a variable.
+_PLAIN_STRING = {"string_content", "escape_sequence"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
 _DATA: bytes = b""
@@ -160,6 +176,8 @@ def _is_literal(node) -> bool:
         return False
     if node.type == "string" and any(child.type == "interpolation" for child in node.children):
         return False
+    if node.type == "encapsed_string":
+        return all(child.type in _PLAIN_STRING for child in node.named_children)
     return True
 
 
