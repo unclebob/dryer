@@ -5,6 +5,11 @@ type constructed by `new`. Local names, field names, type names in argument
 position, and literals become generic markers. Two functions that call the
 same operations in the same shape therefore share a fingerprint set even when
 their locals differ.
+
+Ruby sends a message for every `x.foo`, so the method name of a Ruby call
+always stays, with or without arguments, and so does the symbol in `&:foo`.
+A class that receives the message stays too: `Invoice.new` is not
+`Receipt.new`. A Ruby call's block is part of the call and is compared with it.
 """
 
 from __future__ import annotations
@@ -62,7 +67,18 @@ _LITERALS = {
     "template_string",
     "regex",
     "regex_literal",
+    "simple_symbol",
+    "hash_key_symbol",
+    "delimited_symbol",
+    "heredoc_beginning",
+    "heredoc_body",
+    "rational",
+    "complex",
+    "character",
 }
+
+# Interpolation turns these into expressions. `string` covers Python and Ruby.
+_INTERPOLATED = {"interpolation"}
 
 _OPERATORS = {
     "+",
@@ -134,17 +150,25 @@ _SCOPED = {
     "scoped_type_identifier",
 }
 
+# Ruby only: Rust's `..` and Go's `...` must keep their current fingerprints.
+_RUBY_OPERATORS = {"<=>", "=~", "!~", "..", "...", "||=", "&&=", "**=", "&."}
+
+_RUBY_RECEIVERS = {"constant", "scope_resolution"}
+_RUBY_NAMES = _IDENTIFIERS | _RUBY_RECEIVERS
+
 _ARG_LISTS = {"argument_list", "arguments"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
 _DATA: bytes = b""
+_LANGUAGE = ""
 
 
-def normalize(node, data: bytes):
+def normalize(node, data: bytes, language: str = ""):
     """Normalized tree for `node`, or None when the node is only punctuation."""
 
-    global _DATA
+    global _DATA, _LANGUAGE
     _DATA = data
+    _LANGUAGE = language
     return _normalize(node)
 
 
@@ -158,9 +182,28 @@ _PENDING = object()
 def _is_literal(node) -> bool:
     if node.type not in _LITERALS:
         return False
-    if node.type == "string" and any(child.type == "interpolation" for child in node.children):
-        return False
-    return True
+    return not any(child.type in _INTERPOLATED for child in node.children)
+
+
+def _ruby() -> bool:
+    return _LANGUAGE == "ruby"
+
+
+def _is_operator(node) -> bool:
+    if node.type in _OPERATORS:
+        # Ruby's `|x, y|` delimiters are not the bitwise-or operator.
+        return not (_ruby() and node.type == "|" and node.parent.type == "block_parameters")
+    return _ruby() and node.type in _RUBY_OPERATORS
+
+
+def _method_reference(node) -> bool:
+    """The `:foo` in Ruby's `&:foo` names the method each element receives."""
+
+    return _ruby() and node.type == "simple_symbol" and node.parent.type == "block_argument"
+
+
+def _is_ruby_call(node) -> bool:
+    return _ruby() and node.type == "call"
 
 
 def _named_before_args(node):
@@ -201,10 +244,12 @@ def _try_leaf(node, mode: str, head: bool):
         return _PENDING
     if node.type in _SKIP:
         return None
-    if node.type in _OPERATORS:
+    if _is_operator(node):
         return [K("symbol"), node.type]
     if not node.is_named:
         return None
+    if _method_reference(node):
+        return [K("symbol"), _text(node)[1:]]
     return _named_leaf(node, head)
 
 
@@ -219,6 +264,35 @@ def _call_jobs(node):
     jobs.extend((child, "norm", False) for child in type_args)
     if args is not None:
         jobs.append((args, "norm", False))
+    return jobs
+
+
+def _ruby_call_parts(node):
+    """(receiver, safe navigation, method, arguments, block) of a Ruby call."""
+
+    # `child_by_field_name` builds a new node object each time, and the cache
+    # is keyed by `id`, so the fields are read from `children` instead.
+    fields = {}
+    for index, child in enumerate(node.children):
+        fields.setdefault(node.field_name_for_child(index), child)
+    safe = any(child.type == "&." for child in node.children)
+    return (
+        fields.get("receiver"),
+        safe,
+        fields.get("method"),
+        fields.get("arguments"),
+        fields.get("block"),
+    )
+
+
+def _ruby_call_jobs(node):
+    receiver, _safe, method, args, block = _ruby_call_parts(node)
+    jobs = []
+    if receiver is not None and receiver.type not in _RUBY_RECEIVERS:
+        jobs.append((receiver, "norm", False))
+    if method is not None and method.type not in _RUBY_NAMES:
+        jobs.append((method, "norm", False))
+    jobs.extend((child, "norm", False) for child in (args, block) if child is not None)
     return jobs
 
 
@@ -264,6 +338,8 @@ def _jobs(node, mode: str, head: bool):
         return _path_jobs(node)
     if node.type == "parenthesized_expression" and len(node.named_children) == 1:
         return [(node.named_children[0], "norm", head)]
+    if _is_ruby_call(node):
+        return _ruby_call_jobs(node)
     if node.type in _CALLS:
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
@@ -303,6 +379,33 @@ def _assemble_call(node, cache):
         if norm is not None:
             out.append(norm)
     return out
+
+
+def _ruby_name(node, cache):
+    if node.type in _RUBY_NAMES:
+        return [K("symbol"), _text(node)]
+    return cache[(id(node), "norm", False)]
+
+
+def _assemble_ruby_call(node, cache):
+    receiver, safe, method, args, block = _ruby_call_parts(node)
+    out = [K(node.type)]
+    if receiver is not None:
+        if receiver.type in _RUBY_RECEIVERS:
+            out.append([K("symbol"), _text(receiver)])
+        else:
+            out.append(cache[(id(receiver), "norm", False)])
+    if safe:
+        out.append([K("symbol"), "&."])
+    if method is not None:
+        out.append(_ruby_name(method, cache))
+    for child in (args, block):
+        if child is None:
+            continue
+        norm = cache[(id(child), "norm", False)]
+        if norm is not None:
+            out.append(norm)
+    return [part for part in out if part is not None]
 
 
 def _assemble_attr(node, head: bool, cache):
@@ -362,6 +465,8 @@ def _assemble(node, mode: str, head: bool, cache):
     if node.type == "parenthesized_expression" and len(node.named_children) == 1:
         child = node.named_children[0]
         return cache[(id(child), "norm", head)]
+    if _is_ruby_call(node):
+        return _assemble_ruby_call(node, cache)
     if node.type in _CALLS:
         return _assemble_call(node, cache)
     if node.type in _ATTRIBUTES:

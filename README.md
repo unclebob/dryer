@@ -1,6 +1,6 @@
 # dryer
 
-dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and Python. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
+dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python, and Ruby. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
 
 Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). The other languages use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. A form is only compared with forms written in the same language.
 
@@ -41,6 +41,8 @@ def beta(items):
 
 What stays is the call or method name, the operator, and the shape of the tree. What drops out is the local name, the field name, the literal, and the keyword. A Clojure keyword call `(:kind m)` and `(:id row)` is the same shape. So is `order.total` and `row.amount`.
 
+Ruby has no fields: `order.total` sends the message `total`, so in Ruby `order.total` and `row.amount` differ, and so do `map(&:total)` and `map(&:amount)`. A class that receives a message stays as well: `Invoice.new` is not `Receipt.new`, while `raise ArgumentError` and `raise TypeError` are the same shape. Symbols are literals, so `row[:id]` and `row["id"]` match. A block is part of its call and is compared with it.
+
 ## Run
 
 ```bash
@@ -67,7 +69,17 @@ The first run creates `.venv` and installs the tool. From a project root it walk
 --format F       text or edn, default text
 --edn            Same as --format edn
 --text           Same as --format text
+--include-migrations
+                 Compare Rails migrations and db/schema.rb too
 ```
+
+Rails migrations repeat by design and are not edited once they run, so a walk leaves out `db/migrate` and `db/schema.rb` and says so on stderr:
+
+```text
+dryer: skipped 37 migration files (db/migrate, db/schema.rb); pass --include-migrations to compare them
+```
+
+Naming the directory, as in `./dryer db/migrate`, compares them without the flag.
 
 Normalized syntax nodes are the structural pieces left after incidental names and literals are replaced. `--min-nodes` drops forms smaller than that before comparison.
 
@@ -101,6 +113,7 @@ DUPLICATE score=0.89
 | TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
+| Ruby | `def` and `def self.` methods, including those in `class << self`, `private def`, and blocks such as `class_methods do` | methods defined inside another method, blocks and lambdas outside a method, `*_spec.rb`, `*_test.rb`, `test_*.rb`, the spec/rails/test helpers, and migrations |
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 

@@ -3,7 +3,9 @@
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
-functions inside `mod tests` are test code and are skipped.
+functions inside `mod tests` are test code and are skipped. Ruby compares
+`def` methods; a block, `class << self`, or `private` around a def does not
+make it nested, only another def does.
 """
 
 from __future__ import annotations
@@ -143,12 +145,24 @@ def _rust_nodes(data: bytes, root) -> list:
     return found
 
 
+_RUBY_METHODS = {"method", "singleton_method"}
+
+
+def _ruby_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if node.type in _RUBY_METHODS and not _inside(node, _RUBY_METHODS):
+            found.append(node)
+    return found
+
+
 _PICKERS = {
     "java": ("java", _java_nodes),
     "go": ("go", _go_nodes),
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "ruby": ("ruby", _ruby_nodes),
 }
 
 
@@ -158,7 +172,7 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
     data, tree = parse(source, grammar)
     entries = []
     for node in pick(data, tree.root_node):
-        normalized = normalize(node, data)
+        normalized = normalize(node, data, language)
         if normalized is None:
             continue
         entries.append(

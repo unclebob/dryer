@@ -13,7 +13,7 @@ from dryer.cli import (
     run,
     select_files,
 )
-from dryer.discover import is_test_file, iter_source_files, language_of
+from dryer.discover import is_migration, is_test_file, iter_source_files, language_of
 
 
 def write_source(root: Path, name: str, text: str) -> None:
@@ -30,6 +30,8 @@ def test_language_detection():
     assert language_of("ui/view.tsx") == "typescript"
     assert language_of("src/lib.rs") == "rust"
     assert language_of("src/dryer/cli.py") == "python"
+    assert language_of("app/models/invoice.rb") == "ruby"
+    assert language_of("lib/tasks/sync.rake") == "ruby"
     assert language_of("types.d.ts") is None
     assert language_of("notes.md") is None
 
@@ -348,3 +350,107 @@ def test_a_second_report_replaces_the_snapshot(tmp_path, capsys):
     assert run(args) == 0
     assert run(args) == 0
     assert (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8") == "{:candidates []}\n"
+
+
+RUBY_PAIR = {
+    "app/models/invoice.rb": "def total(xs)\n  ys = filter(xs, odd)\n  zs = map(ys, inc)\n  sum(zs)\nend\n",
+    "app/models/receipt.rb": "def total(items)\n  kept = filter(items, even)\n  out = map(kept, dec)\n  sum(out)\nend\n",
+}
+
+MIGRATIONS = {
+    "db/migrate/001_add_age.rb": "def change\n  add_column :users, :age, :integer\n  add_index :users, :age\n  touch\nend\n",
+    "db/migrate/002_add_rank.rb": "def change\n  add_column :posts, :rank, :integer\n  add_index :posts, :rank\n  touch\nend\n",
+    "db/schema.rb": "def define\n  add_column :users, :age, :integer\n  add_index :users, :age\n  touch\nend\n",
+}
+
+
+def write_rails(root: Path) -> None:
+    for name, text in {**RUBY_PAIR, **MIGRATIONS}.items():
+        write_source(root, name, text)
+    write_source(root, "spec/models/invoice_spec.rb", RUBY_PAIR["app/models/invoice.rb"])
+    write_source(root, "app/models/invoice_test.rb", RUBY_PAIR["app/models/invoice.rb"])
+    write_source(root, "app/spec_helper.rb", RUBY_PAIR["app/models/invoice.rb"])
+
+
+def test_names_that_are_ruby_tests_and_migrations():
+    assert is_test_file("app/models/invoice_spec.rb")
+    assert is_test_file("lib/invoice_test.rb")
+    assert is_test_file("lib/test_invoice.rb")
+    assert is_test_file("rails_helper.rb")
+    assert not is_test_file("app/models/invoice.rb")
+    assert is_migration("db/migrate/001_add_age.rb")
+    assert is_migration("engine/db/migrate/nested/001_add_age.rb")
+    assert is_migration("db/schema.rb")
+    assert not is_migration("lib/migrate/runner.rb")
+    assert not is_migration("db/seeds.rb")
+    assert not is_migration("app/db/migrate")
+
+
+def run_rails(root: Path, *args: str) -> tuple[int, str, str]:
+    import io
+    import contextlib
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = run(["--root", str(root), "--min-lines", "3", "--min-nodes", "1", *args])
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_ruby_project_skips_tests_and_announces_migrations(tmp_path):
+    write_rails(tmp_path)
+    code, out, err = run_rails(tmp_path)
+    assert code == 0
+    assert "app/models/invoice.rb:1-5" in out
+    assert "app/models/receipt.rb:1-5" in out
+    assert "db/" not in out
+    assert "_spec.rb" not in out and "_test.rb" not in out and "spec_helper" not in out
+    assert (
+        "dryer: skipped 3 migration files (db/migrate, db/schema.rb); "
+        "pass --include-migrations to compare them"
+    ) in err
+    assert ':language "ruby"' in (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8")
+
+
+def test_include_migrations_compares_them_silently(tmp_path):
+    write_rails(tmp_path)
+    code, out, err = run_rails(tmp_path, "--include-migrations")
+    assert code == 0
+    assert "db/migrate/001_add_age.rb" in out
+    assert "db/schema.rb" in out
+    assert "skipped" not in err
+
+
+def test_a_named_migration_directory_is_compared(tmp_path):
+    write_rails(tmp_path)
+    code, out, err = run_rails(tmp_path, "db/migrate")
+    assert code == 0
+    assert "db/migrate/001_add_age.rb" in out
+    assert "skipped" not in err
+    code, out, err = run_rails(tmp_path, "db")
+    assert "db/migrate" not in out
+    assert "skipped 3 migration files" in err
+
+
+def test_a_filter_counts_only_the_migrations_it_matches(tmp_path):
+    write_rails(tmp_path)
+    _code, _out, err = run_rails(tmp_path, "schema")
+    assert "skipped 1 migration file (" in err
+    _code, _out, err = run_rails(tmp_path, "models")
+    assert "skipped" not in err
+
+
+def test_changed_skips_migrations_too(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    write_rails(tmp_path)
+    code, out, err = run_rails(tmp_path, "--changed")
+    assert code == 0
+    assert "app/models/invoice.rb" in out
+    assert "db/" not in out
+    assert "skipped 3 migration files" in err
+    _code, out, _err = run_rails(tmp_path, "--changed", "--include-migrations")
+    assert "db/migrate/001_add_age.rb" in out
+
+
+def test_parse_include_migrations():
+    assert parse_args([]).include_migrations is False
+    assert parse_args(["--include-migrations"]).include_migrations is True

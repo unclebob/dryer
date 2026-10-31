@@ -111,6 +111,24 @@ pub fn beta(items: Vec<i32>) -> Vec<i32> {
 }
 """
 
+RUBY_LEFT = """\
+class Board
+  def alpha(xs)
+    ys = filter(xs, odd)
+    map(ys, inc)
+  end
+end
+"""
+
+RUBY_RIGHT = """\
+class Panel
+  def beta(items)
+    kept = filter(items, even)
+    map(kept, dec)
+  end
+end
+"""
+
 
 def test_each_language_matches_renamed_locals(tmp_path):
     samples = {
@@ -126,6 +144,8 @@ def test_each_language_matches_renamed_locals(tmp_path):
         "right.tsx": TSX_RIGHT,
         "left.rs": RUST_LEFT,
         "right.rs": RUST_RIGHT,
+        "left.rb": RUBY_LEFT,
+        "right.rb": RUBY_RIGHT,
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -133,7 +153,7 @@ def test_each_language_matches_renamed_locals(tmp_path):
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"java", "go", "python", "typescript", "rust"}
+    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "ruby"}
     assert [(item.left.file, item.right.file) for item in by_language["typescript"]] == [
         ("left.ts", "right.ts"),
         ("left.tsx", "right.tsx"),
@@ -610,3 +630,83 @@ def test_a_deep_expression_is_read():
     entries, warning = entries_in_source("clojure", f"(defn place [] {nested})\n", "app.clj", "app.clj")
     assert warning is None
     assert entries
+
+
+def ruby_score(left: str, right: str) -> float:
+    found = find_duplicates(forms("ruby", left, "a.rb") + forms("ruby", right, "b.rb"), threshold=0.0)
+    assert len(found) == 1
+    return found[0].score
+
+
+def ruby_def(body: str) -> str:
+    return "def alpha(xs)\n  " + body + "\nend\n"
+
+
+def test_a_ruby_block_does_not_hide_the_method_name():
+    assert ruby_score(ruby_def("xs.select { |x| x.odd? }"), ruby_def("xs.reject { |x| x.odd? }")) < 1.0
+
+
+def test_a_ruby_block_after_arguments_is_compared():
+    plain = ruby_def("xs.each_slice(2) { |x| x }")
+    busier = ruby_def("xs.each_slice(2) { |x| log(x) }")
+    assert ruby_score(plain, busier) < 1.0
+    printed = " ".join(forms("ruby", busier, "a.rb")[0].fingerprints)
+    assert '"log"' in printed
+
+
+def test_every_ruby_message_name_stays():
+    assert ruby_score(ruby_def("xs.total"), ruby_def("xs.amount")) < 1.0
+    assert ruby_score(ruby_def("xs.map(&:succ)"), ruby_def("xs.map(&:pred)")) < 1.0
+    assert ruby_score(ruby_def("xs.map(&:succ)"), ruby_def("ys.map(&:succ)")) == 1.0
+
+
+def test_a_ruby_receiver_class_stays_and_a_class_value_does_not():
+    assert ruby_score(ruby_def("Invoice.new(xs)"), ruby_def("Receipt.new(xs)")) < 1.0
+    assert ruby_score(ruby_def("Billing::Invoice.new(xs)"), ruby_def("Billing::Receipt.new(xs)")) < 1.0
+    assert ruby_score(ruby_def("raise ArgumentError, xs"), ruby_def("raise TypeError, xs")) == 1.0
+
+
+def test_a_ruby_symbol_is_a_literal():
+    assert ruby_score(ruby_def("xs[:id]"), ruby_def("xs['id']")) == 1.0
+    assert ruby_score(ruby_def("xs.fetch(key: 1)"), ruby_def("xs.fetch(name: 2)")) == 1.0
+    assert ruby_score(ruby_def('xs[:"a#{xs}"]'), ruby_def("xs[:id]")) < 1.0
+
+
+def test_ruby_operators_are_part_of_the_structure():
+    assert ruby_score(ruby_def("xs <=> 1"), ruby_def("xs =~ 1")) < 1.0
+    assert ruby_score(ruby_def("@x ||= xs"), ruby_def("@x += xs")) < 1.0
+    assert ruby_score(ruby_def("xs&.total"), ruby_def("xs.total")) < 1.0
+
+
+def test_ruby_block_parameters_are_not_an_operator():
+    printed = " ".join(forms("ruby", ruby_def("xs.each { |x, y| x }"), "a.rb")[0].fingerprints)
+    assert '"|"' not in printed
+
+
+def test_ruby_compares_methods_wherever_they_are_defined():
+    assert spans(
+        "ruby",
+        """\
+module Billable
+  class_methods do
+    def due
+      where(due: true)
+    end
+  end
+  class << self
+    def meta = 1
+  end
+  private def helper(x)
+    x
+  end
+  def self.build(x)
+    def inner; end
+    new(x)
+  end
+  task :sync do
+    run
+  end
+end
+""",
+        "a.rb",
+    ) == [(3, 5), (8, 8), (10, 12), (13, 16)]

@@ -8,7 +8,15 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dryer.discover import SKIP_DIRS, TEST_DIRS, is_test_file, iter_source_files, language_of
+from dryer.discover import (
+    SKIP_DIRS,
+    TEST_DIRS,
+    is_migration,
+    is_test_file,
+    iter_source_files,
+    language_of,
+    walked_part,
+)
 from dryer.report import format_text, render_edn, write_metrics
 from dryer.scan import find_duplicates, scan_files
 
@@ -21,8 +29,8 @@ def _skipped_directory_text() -> str:
 HELP = f"""\
 Usage: dryer [options] [path-or-filter ...]
 
-Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and
-Python. Each form is normalized — call and method names, operators, and
+Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python,
+and Ruby. Each form is normalized — call and method names, operators, and
 tree shape stay; local names, field names, and literals do not — and compared
 with the other forms of the same language. The score is Jaccard similarity of
 those structural fingerprints, the same score as dry4clj.
@@ -30,7 +38,7 @@ those structural fingerprints, the same score as dry4clj.
 Prints a report and writes .metrics/dry.edn.
 
 Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
-TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
+TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py), Ruby (.rb .rake).
 
 Options:
   -h, --help                    Print this help and exit.
@@ -47,6 +55,8 @@ Options:
   --format F                    text or edn, default text.
   --edn                         Same as --format edn.
   --text                        Same as --format text.
+  --include-migrations          Compare Rails migrations (db/migrate) and
+                                db/schema.rb, which are skipped by default.
 
 Arguments:
   path              File or directory to compare. Test paths are included when
@@ -56,10 +66,13 @@ Arguments:
 
 With no paths, source files under the project root are compared. Directories
 named {_skipped_directory_text()} are skipped, as are *_test.go, *.test.cts,
-*.spec.cts, *.spec.ts, test_*.py, and *_test.py files.
+*.spec.cts, *.spec.ts, test_*.py, *_test.py, test_*.rb, *_test.rb, *_spec.rb,
+spec_helper.rb, rails_helper.rb, and test_helper.rb files. Rails migrations
+are skipped unless --include-migrations is given or the db/migrate directory
+is named.
 
 Clojure compares every top-level form except ns. The other languages compare
-functions and methods. A form is only compared with forms in the same language.
+functions and methods; Ruby compares def methods. A form is only compared with forms in the same language.
 
 Exit codes:
   0  the report was written
@@ -81,6 +94,7 @@ class Options:
     min_nodes: int = 20
     format: str = "text"
     changed: bool = False
+    include_migrations: bool = False
 
 
 def _take(args: list[str], index: int, option: str) -> str:
@@ -149,6 +163,10 @@ def parse_args(argv: list[str] | None = None) -> Options:
                 continue
             if arg == "--changed":
                 options.changed = True
+                index += 1
+                continue
+            if arg == "--include-migrations":
+                options.include_migrations = True
                 index += 1
                 continue
             if arg.startswith("-"):
@@ -246,28 +264,38 @@ def _tracked_source(path: Path, root: Path | None = None) -> bool:
     return not is_test_file(path)
 
 
-def _changed_source(root: Path) -> list[Path]:
-    return [path for path in _changed_files(root) if _tracked_source(path, root)]
+def _changed_source(root: Path, include_migrations: bool, skipped: list[Path]) -> list[Path]:
+    found: list[Path] = []
+    for path in _changed_files(root):
+        if not _tracked_source(path, root):
+            continue
+        if not include_migrations and is_migration(walked_part(path, root.resolve())):
+            skipped.append(path)
+            continue
+        found.append(path)
+    return found
 
 
-def _explicit_files(existing: list[Path]) -> list[Path]:
+def _explicit_files(existing: list[Path], include_migrations: bool, skipped: list[Path]) -> list[Path]:
     files: list[Path] = []
     for path in existing:
         if path.is_dir():
-            files.extend(iter_source_files([path]))
+            files.extend(iter_source_files([path], include_migrations, skipped))
         elif language_of(path) is not None:
             files.append(path)
     return files
 
 
-def _selected(options: Options, root: Path, existing: list[Path]) -> list[Path]:
+def _selected(options: Options, root: Path, existing: list[Path], skipped: list[Path]) -> list[Path]:
+    include = options.include_migrations
     if options.changed:
-        return _changed_source(root)
+        return _changed_source(root, include, skipped)
     if options.source_roots:
-        return iter_source_files([(root / path).resolve() for path in options.source_roots])
+        roots = [(root / path).resolve() for path in options.source_roots]
+        return iter_source_files(roots, include, skipped)
     if existing:
-        return _explicit_files(existing)
-    return iter_source_files([root])
+        return _explicit_files(existing, include, skipped)
+    return iter_source_files([root], include, skipped)
 
 
 def _apply_filters(files: list[Path], filters: list[str]) -> list[Path]:
@@ -276,11 +304,24 @@ def _apply_filters(files: list[Path], filters: list[str]) -> list[Path]:
     return [path for path in files if any(item in path.as_posix() for item in filters)]
 
 
-def select_files(options: Options) -> list[Path]:
+def select_files(options: Options, skipped: list[Path] | None = None) -> list[Path]:
+    """Files to compare. Migrations left out are added to `skipped`."""
+
     root = options.project_root.resolve()
     existing, filters = _positionals(root, options.positionals)
-    files = _apply_filters(_selected(options, root, existing), filters)
+    left_out: list[Path] = []
+    files = _apply_filters(_selected(options, root, existing, left_out), filters)
+    if skipped is not None:
+        skipped.extend(sorted(set(_apply_filters(left_out, filters))))
     return sorted({path.resolve() for path in files}, key=lambda path: path.as_posix())
+
+
+def _migration_notice(skipped: list[Path]) -> str:
+    noun = "file" if len(skipped) == 1 else "files"
+    return (
+        f"dryer: skipped {len(skipped)} migration {noun} (db/migrate, db/schema.rb); "
+        "pass --include-migrations to compare them"
+    )
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -294,11 +335,14 @@ def run(argv: list[str] | None = None) -> int:
         return options.exit_code
 
     root = options.project_root.resolve()
+    skipped: list[Path] = []
     try:
-        files = select_files(options)
+        files = select_files(options, skipped)
     except GitStatusError as exc:
         print(exc.message, file=sys.stderr)
         return exc.code
+    if skipped:
+        print(_migration_notice(skipped), file=sys.stderr)
     if not files:
         print("No source files to analyze.")
         return 0
