@@ -113,7 +113,7 @@ DUPLICATE score=0.89
 | TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
-| Ruby | `def` and `def self.` methods, including those in `class << self`, `private def`, and blocks such as `class_methods do` | methods defined inside another method, blocks and lambdas outside a method, `*_spec.rb`, `*_test.rb`, `test_*.rb`, the spec/rails/test helpers, and migrations |
+| Ruby | `def` and `def self.` methods, including those in `class << self`, `private def`, and blocks such as `class_methods do` | methods that only store their arguments (`@name = name`, literals, `super`), methods defined inside another method, blocks and lambdas outside a method, `*_spec.rb`, `*_test.rb`, `test_*.rb`, the spec/rails/test helpers, and migrations |
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 

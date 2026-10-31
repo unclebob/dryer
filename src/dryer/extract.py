@@ -5,7 +5,8 @@ languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
 functions inside `mod tests` are test code and are skipped. Ruby compares
 `def` methods; a block, `class << self`, or `private` around a def does not
-make it nested, only another def does.
+make it nested, only another def does. A Ruby method that only stores its
+arguments, as most `initialize` methods do, is boilerplate and is skipped.
 """
 
 from __future__ import annotations
@@ -146,13 +147,62 @@ def _rust_nodes(data: bytes, root) -> list:
 
 
 _RUBY_METHODS = {"method", "singleton_method"}
+_RUBY_PLAIN_VALUES = {
+    "identifier",
+    "constant",
+    "nil",
+    "true",
+    "false",
+    "integer",
+    "float",
+    "simple_symbol",
+    "hash",
+    "array",
+}
+
+
+def _ruby_plain_value(node) -> bool:
+    """A name, a literal without interpolation, or an empty `[]` or `{}`."""
+
+    if node.type == "string":
+        return all(child.type != "interpolation" for child in node.children)
+    return node.type in _RUBY_PLAIN_VALUES and not node.named_children
+
+
+def _ruby_super(node) -> bool:
+    if node.type == "super":
+        return True
+    return node.type == "call" and child_of_type(node, "super") is not None
+
+
+def _ruby_stores_value(node) -> bool:
+    if node.type != "assignment":
+        return False
+    left = node.child_by_field_name("left")
+    right = node.child_by_field_name("right")
+    return left.type == "instance_variable" and right is not None and _ruby_plain_value(right)
+
+
+def _ruby_attribute_only(node) -> bool:
+    """Every statement is `super` or `@name = <argument or literal>`."""
+
+    body = node.child_by_field_name("body")
+    if body is None or body.type != "body_statement":
+        return False
+    statements = [child for child in body.named_children if child.type != "comment"]
+    if not statements:
+        return False
+    return all(_ruby_super(child) or _ruby_stores_value(child) for child in statements)
 
 
 def _ruby_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
-        if node.type in _RUBY_METHODS and not _inside(node, _RUBY_METHODS):
-            found.append(node)
+        if node.type not in _RUBY_METHODS or _inside(node, _RUBY_METHODS):
+            continue
+        if _ruby_attribute_only(node):
+            continue
+        found.append(node)
     return found
 
 

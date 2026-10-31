@@ -720,3 +720,44 @@ def test_pairing_by_set_size_keeps_file_order_and_the_threshold_edge():
     assert [(item.left.file, item.right.file, item.score) for item in found] == [("a.py", "b.py", 0.75)]
     assert len(find_duplicates([larger, subset, apart], 0.0)) == 3
     assert find_duplicates([_entry("a.py", 1, 4, set()), _entry("b.py", 1, 4, set())], 0.0)[0].score == 0.0
+
+
+def test_a_ruby_method_that_only_stores_its_arguments_is_skipped():
+    assert spans(
+        "ruby",
+        """\
+class Attachment
+  def initialize(node, attachable, *rest)
+    super(*rest)
+    @node = node
+    @label = "attachment" # a comment
+    @kind = :file
+    @seen = {}
+  end
+
+  def initialize_copy(other)
+    @node = other.node
+  end
+
+  def label
+    @label = "#{@node}"
+  end
+
+  def reset
+    # nothing yet
+  end
+
+  def setup
+    super
+    @ready = true
+    log(@ready)
+  end
+end
+""",
+        "a.rb",
+    ) == [(10, 12), (14, 16), (18, 20), (22, 26)]
+
+
+def test_a_ruby_collection_with_content_is_not_a_stored_argument():
+    assert spans("ruby", "def build(x)\n  @items = [compute(x)]\nend\n", "a.rb") == [(1, 3)]
+    assert spans("ruby", "def build(x)\n  @items = [x]\nend\n", "a.rb") == [(1, 3)]
