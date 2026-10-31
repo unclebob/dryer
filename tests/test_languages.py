@@ -710,3 +710,13 @@ end
 """,
         "a.rb",
     ) == [(3, 5), (8, 8), (10, 12), (13, 16)]
+
+
+def test_pairing_by_set_size_keeps_file_order_and_the_threshold_edge():
+    larger = _entry("a.py", 1, 4, {"x", "y", "z", "w"})
+    subset = _entry("b.py", 1, 4, {"x", "y", "z"})
+    apart = _entry("c.py", 1, 4, {"x"})
+    found = find_duplicates([larger, subset, apart], 0.75)
+    assert [(item.left.file, item.right.file, item.score) for item in found] == [("a.py", "b.py", 0.75)]
+    assert len(find_duplicates([larger, subset, apart], 0.0)) == 3
+    assert find_duplicates([_entry("a.py", 1, 4, set()), _entry("b.py", 1, 4, set())], 0.0)[0].score == 0.0

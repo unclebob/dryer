@@ -61,6 +61,28 @@ def _duplicate_key(item: Duplicate):
     )
 
 
+def _reachable(small: int, large: int, threshold: float) -> bool:
+    """Jaccard is at most small / large, so a smaller ratio cannot clear the threshold."""
+
+    return large == 0 or small / large >= threshold
+
+
+def _pairs_in_reach(group: list[Entry], threshold: float):
+    """Index pairs, earlier entry first, whose set sizes allow the threshold.
+
+    Entries are visited smallest set first, so once a partner is too large
+    every later partner is too.
+    """
+
+    order = sorted(range(len(group)), key=lambda index: len(group[index].fingerprints))
+    for position, index in enumerate(order):
+        size = len(group[index].fingerprints)
+        for other in order[position + 1 :]:
+            if not _reachable(size, len(group[other].fingerprints), threshold):
+                break
+            yield min(index, other), max(index, other)
+
+
 def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
     """Pair forms of the same language. Each unordered pair is reported once."""
 
@@ -70,22 +92,23 @@ def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
 
     found: list[Duplicate] = []
     for language, group in by_language.items():
-        for index, left in enumerate(group):
-            for right in group[index + 1 :]:
-                if _same_span(left, right):
-                    continue
-                score = jaccard(left.fingerprints, right.fingerprints)
-                if score < threshold:
-                    continue
-                found.append(
-                    Duplicate(
-                        score=score,
-                        language=language,
-                        left=Span(left.file, left.start_line, left.end_line),
-                        right=Span(right.file, right.start_line, right.end_line),
-                        left_nodes=left.nodes,
-                        right_nodes=right.nodes,
-                    )
+        for left_index, right_index in _pairs_in_reach(group, threshold):
+            left = group[left_index]
+            right = group[right_index]
+            if _same_span(left, right):
+                continue
+            score = jaccard(left.fingerprints, right.fingerprints)
+            if score < threshold:
+                continue
+            found.append(
+                Duplicate(
+                    score=score,
+                    language=language,
+                    left=Span(left.file, left.start_line, left.end_line),
+                    right=Span(right.file, right.start_line, right.end_line),
+                    left_nodes=left.nodes,
+                    right_nodes=right.nodes,
                 )
+            )
     found.sort(key=_duplicate_key)
     return found

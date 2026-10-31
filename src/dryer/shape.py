@@ -102,7 +102,8 @@ def fingerprints(node) -> frozenset[str]:
 
 
 def jaccard(left: frozenset[str], right: frozenset[str]) -> float:
-    union = left | right
+    shared = len(left & right)
+    union = len(left) + len(right) - shared
     if not union:
         return 0.0
-    return len(left & right) / len(union)
+    return shared / union
