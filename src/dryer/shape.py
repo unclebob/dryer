@@ -102,7 +102,8 @@ def fingerprints(node) -> frozenset[str]:
 
 
 def jaccard(left: frozenset[str], right: frozenset[str]) -> float:
-    union = left | right
-    if not union:
+    overlap = len(left & right)
+    union_size = len(left) + len(right) - overlap
+    if not union_size:
         return 0.0
-    return len(left & right) / len(union)
+    return overlap / union_size
