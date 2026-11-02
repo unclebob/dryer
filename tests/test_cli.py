@@ -29,6 +29,8 @@ def test_language_detection():
     assert language_of("board.go") == "go"
     assert language_of("ui/view.tsx") == "typescript"
     assert language_of("src/lib.rs") == "rust"
+    assert language_of("src/Domain/Lease.hs") == "haskell"
+    assert language_of("source/demo/lease.d") == "d"
     assert language_of("src/dryer/cli.py") == "python"
     assert language_of("types.d.ts") is None
     assert language_of("notes.md") is None
@@ -102,7 +104,7 @@ def test_edn_stdout(tmp_path, capsys):
 
 
 def test_empty_project(tmp_path, capsys):
-    assert run(["--root", str(tmp_path)]) == 0
+    assert run(["--root", str(tmp_path)]) == 3
     assert capsys.readouterr().out == "No source files to analyze.\n"
 
 
@@ -170,11 +172,15 @@ def test_names_that_are_tests():
         "tests/conftest.py",
         "pkg/foo_test.py",
         "pkg/test_foo.py",
+        "test/Lease.hs",
+        "src/LeaseSpec.hs",
+        "src/LeaseTest.hs",
         "tests/app.py",
     ]
     for name in names:
         assert is_test_file(name), name
     assert not is_test_file("src/app.py")
+    assert not is_test_file("src/Lease.hs")
 
 
 def _init_repo(path: Path) -> None:
@@ -285,6 +291,23 @@ def test_a_count_must_be_an_integer(capsys):
 def test_a_threshold_must_be_a_number(capsys):
     assert run(["--threshold", "nope"]) == 1
     assert "--threshold requires a number" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "1.01"])
+def test_threshold_must_be_a_finite_fraction(value, capsys):
+    assert run(["--threshold", value]) == 1
+    assert "between 0 and 1" in capsys.readouterr().err
+
+
+def test_parse_error_is_inconclusive_and_preserves_snapshot(tmp_path, capsys):
+    write_source(tmp_path, "Broken.hs", "module Broken where\nopen = case of\n")
+    snapshot = tmp_path / ".metrics" / "dry.edn"
+    snapshot.parent.mkdir()
+    snapshot.write_text("keep me\n", encoding="utf-8")
+
+    assert run(["--root", str(tmp_path), "--min-lines", "1", "--min-nodes", "1"]) == 3
+    assert snapshot.read_text(encoding="utf-8") == "keep me\n"
+    assert "could not parse" in capsys.readouterr().err
 
 
 def test_parse_reads_the_process_arguments(monkeypatch):

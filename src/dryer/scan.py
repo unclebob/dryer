@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import math
+from bisect import bisect_left
 from pathlib import Path
 
 from dryer.discover import language_of
 from dryer.extract import entries_in_source
 from dryer.model import Duplicate, Entry, Span
 from dryer.shape import jaccard
+from dryer.treesitter import ParseError
 
 
 def display_path(path: Path, root: Path) -> str:
@@ -34,7 +37,10 @@ def scan_files(
             continue
         source = path.read_text(encoding="utf-8", errors="replace")
         file = display_path(path, root)
-        found, warning = entries_in_source(language, source, path.as_posix(), file)
+        try:
+            found, warning = entries_in_source(language, source, path.as_posix(), file)
+        except ParseError as exc:
+            raise ParseError(f"{file}: {exc}") from exc
         if warning:
             warnings.append(f"{file}:{warning}")
         entries.extend(entry for entry in found if _keep(entry, min_lines, min_nodes))
@@ -61,6 +67,31 @@ def _duplicate_key(item: Duplicate):
     )
 
 
+def _candidate_pairs(group: list[Entry], threshold: float):
+    """Yield only pairs whose fingerprint sizes can reach the threshold.
+
+    Jaccard similarity cannot exceed ``smaller / larger``. Sorting by size
+    turns that upper bound into a binary-search window. Original indexes are
+    retained so report orientation stays byte-for-byte compatible.
+    """
+
+    indexed = sorted(enumerate(group), key=lambda item: len(item[1].fingerprints))
+    sizes = [len(entry.fingerprints) for _index, entry in indexed]
+    for right_position, (right_index, right) in enumerate(indexed):
+        minimum_size = (
+            0.0
+            if math.isnan(threshold)
+            else math.nextafter(sizes[right_position] * threshold, -math.inf)
+        )
+        first = bisect_left(sizes, minimum_size, 0, right_position)
+        for left_position in range(first, right_position):
+            left_index, left = indexed[left_position]
+            if left_index < right_index:
+                yield left, right
+            else:
+                yield right, left
+
+
 def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
     """Pair forms of the same language. Each unordered pair is reported once."""
 
@@ -70,22 +101,21 @@ def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
 
     found: list[Duplicate] = []
     for language, group in by_language.items():
-        for index, left in enumerate(group):
-            for right in group[index + 1 :]:
-                if _same_span(left, right):
-                    continue
-                score = jaccard(left.fingerprints, right.fingerprints)
-                if score < threshold:
-                    continue
-                found.append(
-                    Duplicate(
-                        score=score,
-                        language=language,
-                        left=Span(left.file, left.start_line, left.end_line),
-                        right=Span(right.file, right.start_line, right.end_line),
-                        left_nodes=left.nodes,
-                        right_nodes=right.nodes,
-                    )
+        for left, right in _candidate_pairs(group, threshold):
+            if _same_span(left, right):
+                continue
+            score = jaccard(left.fingerprints, right.fingerprints)
+            if score < threshold:
+                continue
+            found.append(
+                Duplicate(
+                    score=score,
+                    language=language,
+                    left=Span(left.file, left.start_line, left.end_line),
+                    right=Span(right.file, right.start_line, right.end_line),
+                    left_nodes=left.nodes,
+                    right_nodes=right.nodes,
                 )
+            )
     found.sort(key=_duplicate_key)
     return found

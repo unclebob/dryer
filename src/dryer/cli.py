@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 from dryer.discover import SKIP_DIRS, TEST_DIRS, is_test_file, iter_source_files, language_of
 from dryer.report import format_text, render_edn, write_metrics
 from dryer.scan import find_duplicates, scan_files
+from dryer.treesitter import ParseError
 
 
 def _skipped_directory_text() -> str:
@@ -21,8 +23,8 @@ def _skipped_directory_text() -> str:
 HELP = f"""\
 Usage: dryer [options] [path-or-filter ...]
 
-Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and
-Python. Each form is normalized — call and method names, operators, and
+Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python,
+Haskell, and D. Each form is normalized — call and method names, operators, and
 tree shape stay; local names, field names, and literals do not — and compared
 with the other forms of the same language. The score is Jaccard similarity of
 those structural fingerprints, the same score as dry4clj.
@@ -30,7 +32,8 @@ those structural fingerprints, the same score as dry4clj.
 Prints a report and writes .metrics/dry.edn.
 
 Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
-TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
+TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py), Haskell (.hs),
+D (.d).
 
 Options:
   -h, --help                    Print this help and exit.
@@ -56,7 +59,7 @@ Arguments:
 
 With no paths, source files under the project root are compared. Directories
 named {_skipped_directory_text()} are skipped, as are *_test.go, *.test.cts,
-*.spec.cts, *.spec.ts, test_*.py, and *_test.py files.
+*.spec.cts, *.spec.ts, test_*.py, *_test.py, *Spec.hs, and *Test.hs files.
 
 Clojure compares every top-level form except ns. The other languages compare
 functions and methods. A form is only compared with forms in the same language.
@@ -65,6 +68,7 @@ Exit codes:
   0  the report was written
   1  usage error
   2  unknown output format
+  3  scan was inconclusive (no source or parse failure)
 """
 
 
@@ -91,9 +95,12 @@ def _take(args: list[str], index: int, option: str) -> str:
 
 def _number(value: str, option: str) -> float:
     try:
-        return float(value)
+        parsed = float(value)
     except ValueError as exc:
         raise ValueError(f"{option} requires a number") from exc
+    if not math.isfinite(parsed) or not 0 <= parsed <= 1:
+        raise ValueError(f"{option} requires a finite number between 0 and 1")
+    return parsed
 
 
 def _count(value: str, option: str) -> int:
@@ -301,9 +308,13 @@ def run(argv: list[str] | None = None) -> int:
         return exc.code
     if not files:
         print("No source files to analyze.")
-        return 0
+        return 3
 
-    entries, warnings = scan_files(files, root, options.min_lines, options.min_nodes)
+    try:
+        entries, warnings = scan_files(files, root, options.min_lines, options.min_nodes)
+    except ParseError as exc:
+        print(f"dryer: {exc}", file=sys.stderr)
+        return 3
     for warning in warnings:
         print(f"dryer: {warning}", file=sys.stderr)
     candidates = find_duplicates(entries, options.threshold)

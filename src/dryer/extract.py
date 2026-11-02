@@ -3,7 +3,10 @@
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
-functions inside `mod tests` are test code and are skipped.
+functions inside `mod tests` are test code and are skipped. Haskell compares
+top-level and instance function equations or bindings while leaving local bindings out.
+D compares functions and methods, leaving nested functions in their owner and
+skipping helpers inside `version(unittest)`.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from dryer.astnorm import normalize
 from dryer.clojure_read import is_candidate_form, max_line, normalize as normalize_clj
 from dryer.clojure_read import read_source
 from dryer.model import Entry
-from dryer.shape import fingerprints, node_count
+from dryer.shape import K, fingerprints, node_count
 from dryer.treesitter import child_of_type, descendants, end_line, node_text, parse, start_line
 
 _TS_FUNCTION = {
@@ -143,12 +146,80 @@ def _rust_nodes(data: bytes, root) -> list:
     return found
 
 
+_HASKELL_DECLARATIONS = {"declarations", "class_declarations", "instance_declarations"}
+
+
+def _haskell_operator(data: bytes, node) -> str | None:
+    for child in descendants(node):
+        if child.type in {"operator", "constructor_operator"}:
+            return node_text(data, child)
+    return None
+
+
+def _haskell_name(data: bytes, node) -> str | None:
+    for child in node.named_children:
+        if child.type == "variable":
+            return node_text(data, child)
+        if child.type in {"prefix_id", "infix"}:
+            return _haskell_operator(data, child)
+    return None
+
+
+def _haskell_nodes(data: bytes, root) -> list[list]:
+    """Groups of top-level, class, and instance equations with the same name."""
+
+    groups: dict[tuple[int, str], list] = {}
+    for node in descendants(root):
+        if node.type not in {"function", "bind"}:
+            continue
+        if node.parent is None or node.parent.type not in _HASKELL_DECLARATIONS:
+            continue
+        name = _haskell_name(data, node)
+        if name is None:
+            continue
+        groups.setdefault((node.parent.id, name), []).append(node)
+    return list(groups.values())
+
+
+def _d_unittest_condition(node) -> bool:
+    if node.type != "conditional_declaration":
+        return False
+    condition = child_of_type(node, "condition")
+    return any(child.type == "unittest" for child in descendants(condition))
+
+
+def _d_in_tests(node) -> bool:
+    current = node.parent
+    while current is not None:
+        if current.type == "unittest_declaration" or _d_unittest_condition(current):
+            return True
+        current = current.parent
+    return False
+
+
+def _d_nodes(data: bytes, root) -> list:
+    del data
+    found = []
+    for node in descendants(root):
+        if node.type != "function_declaration":
+            continue
+        body = child_of_type(node, "function_body")
+        if body is None or not body.named_children:
+            continue
+        if _inside(node, {"function_declaration"}) or _d_in_tests(node):
+            continue
+        found.append(node)
+    return found
+
+
 _PICKERS = {
     "java": ("java", _java_nodes),
     "go": ("go", _go_nodes),
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "haskell": ("haskell", _haskell_nodes),
+    "d": ("d", _d_nodes),
 }
 
 
@@ -157,16 +228,24 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
     grammar = grammar_or_name(path) if callable(grammar_or_name) else grammar_or_name
     data, tree = parse(source, grammar)
     entries = []
-    for node in pick(data, tree.root_node):
-        normalized = normalize(node, data)
-        if normalized is None:
+    picked = pick(data, tree.root_node)
+    groups = picked if language == "haskell" else [[node] for node in picked]
+    for group in groups:
+        normalized_nodes = [normalize(node, data) for node in group]
+        normalized_nodes = [node for node in normalized_nodes if node is not None]
+        if not normalized_nodes:
             continue
+        normalized = (
+            normalized_nodes[0]
+            if len(normalized_nodes) == 1
+            else [K("equations"), *normalized_nodes]
+        )
         entries.append(
             Entry(
                 language=language,
                 file=file,
-                start_line=start_line(node),
-                end_line=end_line(node),
+                start_line=start_line(group[0]),
+                end_line=end_line(group[-1]),
                 nodes=node_count(normalized),
                 fingerprints=fingerprints(normalized),
             )
