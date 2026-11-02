@@ -220,6 +220,42 @@ def test_haskell_compares_no_argument_bindings(tmp_path):
     assert found[0].language == "haskell"
 
 
+def test_haskell_signatures_are_not_duplicate_candidates():
+    source = """\
+module Demo where
+first :: Int -> Int
+second :: Int -> Int
+"""
+    assert spans("haskell", source, "Demo.hs") == []
+
+
+def test_haskell_equations_form_one_candidate():
+    source = """\
+module Demo where
+choose :: Bool -> Int
+choose True =
+  1
+choose False =
+  0
+"""
+    entries = forms("haskell", source, "Demo.hs")
+    assert [(entry.start_line, entry.end_line) for entry in entries] == [(3, 6)]
+
+
+def test_haskell_equation_groups_clear_the_default_line_filter(tmp_path):
+    left = "module Left where\nchoose True =\n  1\nchoose False =\n  0\n"
+    right = "module Right where\npick True =\n  2\npick False =\n  3\n"
+    write_source(tmp_path, "Left.hs", left)
+    write_source(tmp_path, "Right.hs", right)
+
+    entries, warnings = scan_files(
+        sorted(tmp_path.glob("*.hs")), tmp_path, min_lines=4, min_nodes=1
+    )
+    assert warnings == []
+    assert len(entries) == 2
+    assert len(find_duplicates(entries, threshold=0.99)) == 1
+
+
 def test_d_keeps_callee_names_and_skips_unittest_and_nested_functions(tmp_path):
     source = """\
 module demo.left;

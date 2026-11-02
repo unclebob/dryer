@@ -104,7 +104,7 @@ def test_edn_stdout(tmp_path, capsys):
 
 
 def test_empty_project(tmp_path, capsys):
-    assert run(["--root", str(tmp_path)]) == 0
+    assert run(["--root", str(tmp_path)]) == 3
     assert capsys.readouterr().out == "No source files to analyze.\n"
 
 
@@ -291,6 +291,23 @@ def test_a_count_must_be_an_integer(capsys):
 def test_a_threshold_must_be_a_number(capsys):
     assert run(["--threshold", "nope"]) == 1
     assert "--threshold requires a number" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "1.01"])
+def test_threshold_must_be_a_finite_fraction(value, capsys):
+    assert run(["--threshold", value]) == 1
+    assert "between 0 and 1" in capsys.readouterr().err
+
+
+def test_parse_error_is_inconclusive_and_preserves_snapshot(tmp_path, capsys):
+    write_source(tmp_path, "Broken.hs", "module Broken where\nopen = case of\n")
+    snapshot = tmp_path / ".metrics" / "dry.edn"
+    snapshot.parent.mkdir()
+    snapshot.write_text("keep me\n", encoding="utf-8")
+
+    assert run(["--root", str(tmp_path), "--min-lines", "1", "--min-nodes", "1"]) == 3
+    assert snapshot.read_text(encoding="utf-8") == "keep me\n"
+    assert "could not parse" in capsys.readouterr().err
 
 
 def test_parse_reads_the_process_arguments(monkeypatch):

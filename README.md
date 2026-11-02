@@ -101,12 +101,12 @@ DUPLICATE score=0.89
 | TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
-| Haskell | top-level and instance function equations or bindings | local function bindings and files named `*Spec.hs` or `*Test.hs` |
+| Haskell | top-level, class, and instance functions; equations of one binding form one candidate | signatures, local function bindings, and files named `*Spec.hs` or `*Test.hs` |
 | D | functions and methods with a body | nested functions stay inside their owner; helpers under `version(unittest)` are skipped |
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 
-A missing or unreadable Clojure form is reported on stderr. Forms read before it are still compared. The run exits `0` after a report, `1` on a usage error, and `2` on an unknown `--format`.
+A missing or unreadable Clojure form is reported on stderr. Forms read before it are still compared. The run exits `0` after a report, `1` on a usage error, `2` on an unknown `--format`, and `3` when no source was selected or tree-sitter could not parse a source file. An inconclusive run preserves the last snapshot.
 
 ## Development
 

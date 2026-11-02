@@ -8,6 +8,7 @@ from dryer.discover import language_of
 from dryer.extract import entries_in_source
 from dryer.model import Duplicate, Entry, Span
 from dryer.shape import jaccard
+from dryer.treesitter import ParseError
 
 
 def display_path(path: Path, root: Path) -> str:
@@ -34,7 +35,10 @@ def scan_files(
             continue
         source = path.read_text(encoding="utf-8", errors="replace")
         file = display_path(path, root)
-        found, warning = entries_in_source(language, source, path.as_posix(), file)
+        try:
+            found, warning = entries_in_source(language, source, path.as_posix(), file)
+        except ParseError as exc:
+            raise ParseError(f"{file}: {exc}") from exc
         if warning:
             warnings.append(f"{file}:{warning}")
         entries.extend(entry for entry in found if _keep(entry, min_lines, min_nodes))

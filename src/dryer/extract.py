@@ -15,7 +15,7 @@ from dryer.astnorm import normalize
 from dryer.clojure_read import is_candidate_form, max_line, normalize as normalize_clj
 from dryer.clojure_read import read_source
 from dryer.model import Entry
-from dryer.shape import fingerprints, node_count
+from dryer.shape import K, fingerprints, node_count
 from dryer.treesitter import child_of_type, descendants, end_line, node_text, parse, start_line
 
 _TS_FUNCTION = {
@@ -146,17 +146,39 @@ def _rust_nodes(data: bytes, root) -> list:
     return found
 
 
-def _haskell_nodes(data: bytes, root) -> list:
-    """Top-level and instance function equations, excluding local bindings."""
+_HASKELL_DECLARATIONS = {"declarations", "class_declarations", "instance_declarations"}
 
-    found = []
+
+def _haskell_operator(data: bytes, node) -> str | None:
+    for child in descendants(node):
+        if child.type in {"operator", "constructor_operator"}:
+            return node_text(data, child)
+    return None
+
+
+def _haskell_name(data: bytes, node) -> str | None:
+    for child in node.named_children:
+        if child.type == "variable":
+            return node_text(data, child)
+        if child.type in {"prefix_id", "infix"}:
+            return _haskell_operator(data, child)
+    return None
+
+
+def _haskell_nodes(data: bytes, root) -> list[list]:
+    """Groups of top-level, class, and instance equations with the same name."""
+
+    groups: dict[tuple[int, str], list] = {}
     for node in descendants(root):
         if node.type not in {"function", "bind"}:
             continue
-        if _inside(node, {"function", "bind"}):
+        if node.parent is None or node.parent.type not in _HASKELL_DECLARATIONS:
             continue
-        found.append(node)
-    return found
+        name = _haskell_name(data, node)
+        if name is None:
+            continue
+        groups.setdefault((node.parent.id, name), []).append(node)
+    return list(groups.values())
 
 
 def _d_unittest_condition(node) -> bool:
@@ -206,16 +228,24 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
     grammar = grammar_or_name(path) if callable(grammar_or_name) else grammar_or_name
     data, tree = parse(source, grammar)
     entries = []
-    for node in pick(data, tree.root_node):
-        normalized = normalize(node, data)
-        if normalized is None:
+    picked = pick(data, tree.root_node)
+    groups = picked if language == "haskell" else [[node] for node in picked]
+    for group in groups:
+        normalized_nodes = [normalize(node, data) for node in group]
+        normalized_nodes = [node for node in normalized_nodes if node is not None]
+        if not normalized_nodes:
             continue
+        normalized = (
+            normalized_nodes[0]
+            if len(normalized_nodes) == 1
+            else [K("equations"), *normalized_nodes]
+        )
         entries.append(
             Entry(
                 language=language,
                 file=file,
-                start_line=start_line(node),
-                end_line=end_line(node),
+                start_line=start_line(group[0]),
+                end_line=end_line(group[-1]),
                 nodes=node_count(normalized),
                 fingerprints=fingerprints(normalized),
             )
