@@ -5,6 +5,8 @@ languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
 functions inside `mod tests` are test code and are skipped. Haskell compares
 top-level and instance function equations or bindings while leaving local bindings out.
+D compares functions and methods, leaving nested functions in their owner and
+skipping helpers inside `version(unittest)`.
 """
 
 from __future__ import annotations
@@ -157,6 +159,37 @@ def _haskell_nodes(data: bytes, root) -> list:
     return found
 
 
+def _d_unittest_condition(node) -> bool:
+    if node.type != "conditional_declaration":
+        return False
+    condition = child_of_type(node, "condition")
+    return any(child.type == "unittest" for child in descendants(condition))
+
+
+def _d_in_tests(node) -> bool:
+    current = node.parent
+    while current is not None:
+        if current.type == "unittest_declaration" or _d_unittest_condition(current):
+            return True
+        current = current.parent
+    return False
+
+
+def _d_nodes(data: bytes, root) -> list:
+    del data
+    found = []
+    for node in descendants(root):
+        if node.type != "function_declaration":
+            continue
+        body = child_of_type(node, "function_body")
+        if body is None or not body.named_children:
+            continue
+        if _inside(node, {"function_declaration"}) or _d_in_tests(node):
+            continue
+        found.append(node)
+    return found
+
+
 _PICKERS = {
     "java": ("java", _java_nodes),
     "go": ("go", _go_nodes),
@@ -164,6 +197,7 @@ _PICKERS = {
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
     "haskell": ("haskell", _haskell_nodes),
+    "d": ("d", _d_nodes),
 }
 
 

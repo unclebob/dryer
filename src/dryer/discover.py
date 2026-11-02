@@ -21,6 +21,7 @@ EXTENSIONS = {
     ".cts": "typescript",
     ".rs": "rust",
     ".hs": "haskell",
+    ".d": "d",
     ".py": "python",
 }
 

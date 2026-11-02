@@ -30,6 +30,7 @@ def test_language_detection():
     assert language_of("ui/view.tsx") == "typescript"
     assert language_of("src/lib.rs") == "rust"
     assert language_of("src/Domain/Lease.hs") == "haskell"
+    assert language_of("source/demo/lease.d") == "d"
     assert language_of("src/dryer/cli.py") == "python"
     assert language_of("types.d.ts") is None
     assert language_of("notes.md") is None

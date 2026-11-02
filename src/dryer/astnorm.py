@@ -108,6 +108,8 @@ _OPERATORS = {
     "and",
     "or",
     "not",
+    "is",
+    "!is",
     "??",
     "?.",
     "=",
@@ -137,7 +139,7 @@ _SCOPED = {
     "scoped_type_identifier",
 }
 
-_ARG_LISTS = {"argument_list", "arguments"}
+_ARG_LISTS = {"argument_list", "arguments", "named_arguments"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
 _DATA: bytes = b""

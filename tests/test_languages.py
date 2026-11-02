@@ -127,6 +127,24 @@ beta items =
   in map dec kept
 """
 
+D_LEFT = """\
+module left;
+
+int alpha(int[] xs) {
+  auto ys = filter(xs, &odd);
+  return map(ys, &inc);
+}
+"""
+
+D_RIGHT = """\
+module right;
+
+int beta(int[] items) {
+  auto kept = filter(items, &even);
+  return map(kept, &dec);
+}
+"""
+
 
 def test_each_language_matches_renamed_locals(tmp_path):
     samples = {
@@ -144,6 +162,8 @@ def test_each_language_matches_renamed_locals(tmp_path):
         "right.rs": RUST_RIGHT,
         "left.hs": HASKELL_LEFT,
         "right.hs": HASKELL_RIGHT,
+        "left.d": D_LEFT,
+        "right.d": D_RIGHT,
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -151,7 +171,7 @@ def test_each_language_matches_renamed_locals(tmp_path):
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "haskell"}
+    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "haskell", "d"}
     assert [(item.left.file, item.right.file) for item in by_language["typescript"]] == [
         ("left.ts", "right.ts"),
         ("left.tsx", "right.tsx"),
@@ -198,6 +218,42 @@ def test_haskell_compares_no_argument_bindings(tmp_path):
     found = find_duplicates(entries, threshold=1.0)
     assert len(found) == 1
     assert found[0].language == "haskell"
+
+
+def test_d_keeps_callee_names_and_skips_unittest_and_nested_functions(tmp_path):
+    source = """\
+module demo.left;
+
+version (unittest) {
+  int testHelper(int value) { return value + 1; }
+}
+
+version (Windows) {
+  int platformHelper(int value) { return value + 1; }
+}
+
+int declared(int value);
+
+int outer(int[] xs) {
+  int local(int value) { return value + 1; }
+  return filter(xs, &odd).length + local(1);
+}
+"""
+    entries = forms("d", source, "source/demo/left.d")
+    assert [(entry.start_line, entry.end_line) for entry in entries] == [(8, 8), (13, 16)]
+
+    changed = forms(
+        "d",
+        source.replace("filter(xs, &odd)", "select(xs, &odd)"),
+        "source/demo/right.d",
+    )
+    found = find_duplicates(entries + changed, threshold=0.0)
+    outer_pair = next(
+        item
+        for item in found
+        if item.left.start_line == 13 and item.right.start_line == 13
+    )
+    assert outer_pair.score < 1.0
 
 
 def test_different_callee_is_not_the_same_structure(tmp_path):
