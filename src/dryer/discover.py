@@ -19,6 +19,10 @@ EXTENSIONS = {
     ".tsx": "typescript",
     ".mts": "typescript",
     ".cts": "typescript",
+    ".js": "typescript",
+    ".jsx": "typescript",
+    ".mjs": "typescript",
+    ".cjs": "typescript",
     ".rs": "rust",
     ".py": "python",
 }
@@ -71,6 +75,14 @@ def is_test_file(path: str | Path) -> bool:
             ".spec.mts",
             ".test.cts",
             ".spec.cts",
+            ".test.js",
+            ".spec.js",
+            ".test.jsx",
+            ".spec.jsx",
+            ".test.mjs",
+            ".spec.mjs",
+            ".test.cjs",
+            ".spec.cjs",
         )
     ):
         return True
