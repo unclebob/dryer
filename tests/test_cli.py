@@ -28,10 +28,15 @@ def test_language_detection():
     assert language_of("Widget.java") == "java"
     assert language_of("board.go") == "go"
     assert language_of("ui/view.tsx") == "typescript"
+    assert language_of("ui/view.jsx") == "typescript"
+    assert language_of("ui/view.js") == "typescript"
+    assert language_of("ui/view.mjs") == "typescript"
+    assert language_of("ui/view.cjs") == "typescript"
     assert language_of("src/lib.rs") == "rust"
     assert language_of("src/dryer/cli.py") == "python"
     assert language_of("types.d.ts") is None
     assert language_of("notes.md") is None
+    assert language_of("data.json") is None
 
 
 def test_help_does_not_scan(capsys):
@@ -167,6 +172,14 @@ def test_names_that_are_tests():
         "ui/a.spec.mts",
         "ui/a.test.cts",
         "ui/a.spec.cts",
+        "ui/a.test.js",
+        "ui/a.spec.js",
+        "ui/a.test.jsx",
+        "ui/a.spec.jsx",
+        "ui/a.test.mjs",
+        "ui/a.spec.mjs",
+        "ui/a.test.cjs",
+        "ui/a.spec.cjs",
         "tests/conftest.py",
         "pkg/foo_test.py",
         "pkg/test_foo.py",
