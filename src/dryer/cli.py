@@ -176,11 +176,13 @@ class GitStatusError(Exception):
 
 
 def _git(root: Path, *args: str) -> bytes:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     result = subprocess.run(
         ["git", "-C", os.fspath(root), *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        env=env,
     )
     if result.returncode != 0:
         message = os.fsdecode(result.stderr).strip() or "git status failed"
