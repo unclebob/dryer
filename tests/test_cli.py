@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -178,24 +179,27 @@ def test_names_that_are_tests():
 
 
 def _init_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.name", "Dev"], cwd=path, check=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True, env=env)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=path, check=True, env=env)
+    subprocess.run(["git", "config", "user.name", "Dev"], cwd=path, check=True, env=env)
 
 
 def _commit(path: Path, message: str) -> None:
-    subprocess.run(["git", "add", "-A"], cwd=path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", message], cwd=path, check=True, capture_output=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True, capture_output=True, env=env)
+    subprocess.run(["git", "commit", "-m", message], cwd=path, check=True, capture_output=True, env=env)
 
 
 def test_changed_files_reads_real_status(tmp_path):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     _init_repo(tmp_path)
     write_source(tmp_path, "src/a.py", "x = 1\n")
     write_source(tmp_path, "src/old.py", "x = 1\n")
     write_source(tmp_path, "gone.py", "x = 1\n")
     _commit(tmp_path, "base")
     (tmp_path / "gone.py").unlink()
-    subprocess.run(["git", "mv", "src/old.py", "src/b.py"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "mv", "src/old.py", "src/b.py"], cwd=tmp_path, check=True, capture_output=True, env=env)
     write_source(tmp_path, "src/c d.py", "x = 1\n")
     write_source(tmp_path, "src/café.py", "x = 1\n")
     write_source(tmp_path, "fresh/nested/new.py", "x = 1\n")
@@ -348,3 +352,18 @@ def test_a_second_report_replaces_the_snapshot(tmp_path, capsys):
     assert run(args) == 0
     assert run(args) == 0
     assert (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8") == "{:candidates []}\n"
+
+
+def test_parser_for_prefers_bundled_parser_before_download(monkeypatch):
+    import tree_sitter_language_pack as tslp
+    from dryer import treesitter
+
+    treesitter.parser_for.cache_clear()
+    downloads = []
+    monkeypatch.setattr(
+        tslp, "download", lambda langs: downloads.append(langs), raising=False
+    )
+    parser = treesitter.parser_for("python")
+    assert parser is not None
+    assert downloads == []
+
