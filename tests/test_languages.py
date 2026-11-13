@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from dryer.extract import entries_in_source
 from dryer.model import Entry
 from dryer.scan import _keep, find_duplicates, scan_files
@@ -343,6 +345,34 @@ def forms(language: str, source: str, file: str) -> list[Entry]:
 
 def spans(language: str, source: str, file: str) -> list[tuple[int, int]]:
     return [(entry.start_line, entry.end_line) for entry in forms(language, source, file)]
+
+
+@pytest.mark.parametrize("suffix", [".js", ".jsx", ".mjs", ".cjs"])
+def test_javascript_jsx_matches_a_renamed_tsx_component(suffix):
+    javascript = forms(
+        "typescript",
+        """\
+export const alpha = () => {
+  const label = format("alpha");
+  return <button title={label}>{label}</button>;
+};
+""",
+        f"left{suffix}",
+    )
+    tsx = forms(
+        "typescript",
+        """\
+export const beta = () => {
+  const text = format("beta");
+  return <button title={text}>{text}</button>;
+};
+""",
+        "right.tsx",
+    )
+    found = find_duplicates(javascript + tsx, threshold=0.99)
+    assert [(item.left.file, item.right.file, item.score) for item in found] == [
+        (f"left{suffix}", "right.tsx", 1.0)
+    ]
 
 
 def test_a_parenthesized_callee_matches_the_bare_call():
