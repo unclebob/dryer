@@ -31,6 +31,8 @@ _DEFINITION_PARENTS = {
 def _grammar(path: str) -> str:
     if path.endswith(".tsx"):
         return "tsx"
+    if path.endswith((".js", ".jsx", ".mjs", ".cjs")):
+        return "javascript"
     return "typescript"
 
 
