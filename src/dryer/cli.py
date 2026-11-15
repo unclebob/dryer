@@ -40,7 +40,8 @@ Options:
                                 May be repeated.
   --changed                     Compare added and modified source files from
                                 git status.
-  --threshold N                 Minimum similarity score, default 0.82.
+  --threshold N                 Minimum similarity score from 0 to 1 inclusive,
+                                default 0.82.
   --min-lines N                 Minimum source lines in a candidate form,
                                 default 4.
   --min-nodes N                 Minimum normalized syntax nodes, default 20.
@@ -125,6 +126,8 @@ def parse_args(argv: list[str] | None = None) -> Options:
                 continue
             if arg == "--threshold":
                 options.threshold = _number(_take(args, index, arg), arg)
+                if not 0 <= options.threshold <= 1:
+                    raise ValueError("--threshold must be between 0 and 1 inclusive")
                 index += 2
                 continue
             if arg == "--min-lines":
