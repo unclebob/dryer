@@ -267,3 +267,67 @@ def test_a_trailing_lambda_after_arguments_matches_a_last_argument_lambda():
 def test_the_argument_before_a_lambda_still_counts():
     assert score(_statement("run(a) { a }"), _statement("run { a }")) < 1.0
     assert score(_statement("run { a }"), _statement("run({ a }, { a })")) < 1.0
+
+
+def _expr(expression: str) -> str:
+    return f"fun f(a: Any?, b: Any?): Any? {{\n    val x = {expression}\n    return use(x)\n}}\n"
+
+
+def test_safe_call_non_null_assertion_and_elvis_are_distinct_operators():
+    expressions = ["a.size", "a?.size", "a!!.size", "a ?: b", "a + b"]
+    for index, left in enumerate(expressions):
+        for right in expressions[index + 1 :]:
+            assert score(_expr(left), _expr(right)) < 1.0, (left, right)
+
+
+def test_a_safe_call_keeps_the_name_of_the_called_method():
+    assert score(_expr("a?.find(b)"), _expr("b?.find(a)")) == 1.0
+    assert score(_expr("a?.find(b)"), _expr("b?.drop(a)")) < 1.0
+    assert score(_expr("a?.find(b)"), _expr("a.find(b)")) < 1.0
+
+
+def _flow(statement: str) -> str:
+    return f"fun f(a: Any?): Any? {{\n    while (ok(a)) {{\n        {statement}\n    }}\n    return a\n}}\n"
+
+
+def test_return_throw_break_and_continue_are_distinct():
+    statements = ["break", "continue", "return a", "throw a"]
+    for index, left in enumerate(statements):
+        for right in statements[index + 1 :]:
+            assert score(_flow(left), _flow(right)) < 1.0, (left, right)
+
+
+def test_is_in_and_as_and_their_negations_are_distinct():
+    expressions = ["a is B", "a !is B", "a in b", "a !in b", "a as B", "a as? B"]
+    for index, left in enumerate(expressions):
+        for right in expressions[index + 1 :]:
+            assert score(_expr(left), _expr(right)) < 1.0, (left, right)
+
+
+def test_is_in_and_as_inside_when_branches_are_distinct():
+    def branch(condition: str) -> str:
+        return f"fun f(a: Any?): Int {{\n    return when (a) {{\n        {condition} -> 1\n        else -> 2\n    }}\n}}\n"
+
+    assert score(branch("is B"), branch("in b")) < 1.0
+    assert score(branch("is B"), branch("!is B")) < 1.0
+
+
+def test_ranges_and_callable_references_are_operators():
+    assert score(_expr("a..b"), _expr("a..<b")) < 1.0
+    assert score(_expr("a..b"), _expr("a + b")) < 1.0
+    assert score(_expr("::use"), _expr("a")) < 1.0
+
+
+def _atoms(source: str) -> set[str]:
+    entries, _ = entries_in_source("kotlin", source, "Demo.kt", "Demo.kt")
+    return set(entries[0].fingerprints)
+
+
+def test_keywords_count_only_under_their_own_parent():
+    looping = "fun f(xs: List<Int>): Int {\n    for (x in xs) {\n        use(x)\n    }\n    return 1\n}\n"
+    testing = "fun f(x: Int, xs: List<Int>): Boolean {\n    use(x)\n    return x in xs\n}\n"
+    assert '[:symbol "in"]' not in _atoms(looping)
+    assert '[:symbol "in"]' in _atoms(testing)
+    assert '[:symbol "return"]' in _atoms(looping)
+    assert '[:symbol "fun"]' not in _atoms(looping)
+    assert '[:symbol "val"]' not in _atoms("fun f() {\n    val x = 1\n    use(x)\n}\n")
