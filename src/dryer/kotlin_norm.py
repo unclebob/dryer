@@ -71,3 +71,12 @@ def kind(node) -> str:
     if node.type == "navigation_suffix" and node.children[0].type == "?.":
         return "safe_navigation_suffix"
     return node.type
+
+
+def infix_parts(node):
+    """(left, function name, right) of `a shl 2`, else None."""
+
+    named = node.named_children
+    if node.type == "infix_expression" and len(named) == 3 and named[1].type == "simple_identifier":
+        return named
+    return None

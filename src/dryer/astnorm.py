@@ -293,6 +293,10 @@ def _jobs(node, mode: str, head: bool):
         return [(inner, "norm", head)]
     if _KOTLIN and node.type == "call_suffix":
         return [(child, "norm", False) for child in kotlin_norm.suffix_items(node)]
+    infix = kotlin_norm.infix_parts(node) if _KOTLIN else None
+    if infix is not None:
+        left, name, right = infix
+        return [(left, "norm", False), (name, "callee", False), (right, "norm", False)]
     if node.type in _CALLS:
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
@@ -383,6 +387,16 @@ def _assemble_items(node, items, cache):
     return [K(node.type), *children]
 
 
+def _assemble_infix(node, parts, cache):
+    left, name, right = parts
+    out = [K(node.type)]
+    for child, mode in ((left, "norm"), (name, "callee"), (right, "norm")):
+        norm = cache[(id(child), mode, False)]
+        if norm is not None:
+            out.append(norm)
+    return out
+
+
 def _assemble_children(node, cache):
     return _assemble_items(node, node.children, cache)
 
@@ -397,6 +411,9 @@ def _assemble(node, mode: str, head: bool, cache):
         return cache[(id(inner), "norm", head)]
     if _KOTLIN and node.type == "call_suffix":
         return _assemble_items(node, kotlin_norm.suffix_items(node), cache)
+    infix = kotlin_norm.infix_parts(node) if _KOTLIN else None
+    if infix is not None:
+        return _assemble_infix(node, infix, cache)
     if node.type in _CALLS:
         return _assemble_call(node, cache)
     if node.type in _ATTRIBUTES:
