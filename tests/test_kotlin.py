@@ -1,4 +1,5 @@
 from dryer.extract import entries_in_source
+from dryer.shape import jaccard
 
 
 def spans(source: str) -> list[tuple[int, int]]:
@@ -115,3 +116,63 @@ val handler = Handler { value: Int ->
 fun kept() = 1
 """
     assert spans(source) == [(7, 7)]
+
+
+def score(left: str, right: str) -> float:
+    """Jaccard score of the only unit in each source, as dryer reports it."""
+
+    found = []
+    for source in (left, right):
+        entries, _ = entries_in_source("kotlin", source, "Demo.kt", "Demo.kt")
+        assert len(entries) == 1
+        found.append(entries[0].fingerprints)
+    return jaccard(found[0], found[1])
+
+
+def test_renamed_locals_parameters_and_types_score_one():
+    left = """\
+fun alpha(xs: List<Int>): List<Int> {
+    val ys = filter(xs, odd)
+    return map(ys, inc)
+}
+"""
+    right = """\
+fun beta(items: Set<String>): Set<String> {
+    val kept = filter(items, even)
+    return map(kept, dec)
+}
+"""
+    assert score(left, right) == 1.0
+
+
+def test_a_different_called_function_lowers_the_score():
+    left = "fun alpha(xs: Int): Int {\n    val ys = filter(xs)\n    return map(ys)\n}\n"
+    right = "fun beta(xs: Int): Int {\n    val ys = filter(xs)\n    return reduce(ys)\n}\n"
+    assert score(left, right) < 1.0
+
+
+def test_a_called_method_name_stays_and_a_property_name_does_not():
+    left = "fun alpha(a: Order): Int {\n    return a.items.count(a.total)\n}\n"
+    same = "fun beta(b: Row): Int {\n    return b.rows.count(b.amount)\n}\n"
+    other = "fun gamma(b: Row): Int {\n    return b.rows.sum(b.amount)\n}\n"
+    assert score(left, same) == 1.0
+    assert score(left, other) < 1.0
+
+
+def test_structurally_different_functions_score_low():
+    left = """\
+fun alpha(xs: List<Int>): Int {
+    var total = 0
+    for (x in xs) {
+        total += weigh(x)
+    }
+    return total
+}
+"""
+    right = """\
+fun beta(name: String): String {
+    log(name)
+    return name.trim()
+}
+"""
+    assert score(left, right) < 0.5
