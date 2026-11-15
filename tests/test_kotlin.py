@@ -176,3 +176,35 @@ fun beta(name: String): String {
 }
 """
     assert score(left, right) < 0.5
+
+
+BODY = "    val ys = filter(xs)\n    return map(ys)\n"
+
+
+def test_modifiers_do_not_change_the_structure():
+    plain = f"fun alpha(xs: Int): Int {{\n{BODY}}}\n"
+    modified = (
+        "class Box {\n"
+        f"    private suspend inline override fun beta(xs: Int): Int {{\n{BODY}    }}\n"
+        "}\n"
+    )
+    assert score(plain, modified) == 1.0
+
+
+def test_annotations_on_the_function_and_its_parameters_are_dropped():
+    plain = f"fun alpha(xs: Int): Int {{\n{BODY}}}\n"
+    annotated = f'@Suppress("unused") @Throws(Exception::class)\nfun beta(@Body xs: Int): Int {{\n{BODY}}}\n'
+    assert score(plain, annotated) == 1.0
+
+
+def test_an_annotation_on_a_local_property_is_dropped():
+    plain = "fun alpha(xs: Int): Int {\n    val ys = filter(xs)\n    return map(ys)\n}\n"
+    annotated = "fun beta(xs: Int): Int {\n    @Suppress(\"x\") val ys = filter(xs)\n    return map(ys)\n}\n"
+    assert score(plain, annotated) == 1.0
+
+
+def test_a_java_modifier_still_counts_in_java():
+    plain = "class A {\n  int a(int x) {\n    return f(x);\n  }\n}\n"
+    marked = "class A {\n  @Override\n  public int a(int x) {\n    return f(x);\n  }\n}\n"
+    found = [entries_in_source("java", src, "A.java", "A.java")[0][0] for src in (plain, marked)]
+    assert jaccard(found[0].fingerprints, found[1].fingerprints) < 1.0
