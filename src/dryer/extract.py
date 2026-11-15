@@ -2,7 +2,8 @@
 
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
-signatures alone, and not callbacks nested inside another function. Rust
+signatures alone, and not callbacks nested inside another function. Kotlin
+adds secondary constructors and property accessors that have a body. Rust
 functions inside `mod tests` are test code and are skipped.
 """
 
@@ -130,6 +131,28 @@ def _typescript_nodes(data: bytes, root) -> list:
     return found
 
 
+_KOTLIN_UNITS = {"function_declaration", "secondary_constructor", "getter", "setter"}
+_KOTLIN_SCOPES = _KOTLIN_UNITS | {"lambda_literal", "object_literal", "anonymous_function"}
+
+
+def _kotlin_has_body(node) -> bool:
+    """`{ }` or `= expr` for a function or accessor; braces for a constructor."""
+
+    if node.type == "secondary_constructor":
+        return _has(node, "{")
+    return _has(node, "function_body")
+
+
+def _kotlin_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if node.type not in _KOTLIN_UNITS or not _kotlin_has_body(node):
+            continue
+        if not _inside(node, _KOTLIN_SCOPES):
+            found.append(node)
+    return found
+
+
 def _rust_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
@@ -149,6 +172,7 @@ _PICKERS = {
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "kotlin": ("kotlin", _kotlin_nodes),
 }
 
 
