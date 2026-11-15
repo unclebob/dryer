@@ -9,6 +9,7 @@ their locals differ.
 
 from __future__ import annotations
 
+from dryer import kotlin_norm
 from dryer.shape import K
 from dryer.treesitter import node_text
 
@@ -141,13 +142,15 @@ _ARG_LISTS = {"argument_list", "arguments", "call_suffix"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
 _DATA: bytes = b""
+_KOTLIN: bool = False
 
 
-def normalize(node, data: bytes):
+def normalize(node, data: bytes, language: str = ""):
     """Normalized tree for `node`, or None when the node is only punctuation."""
 
-    global _DATA
+    global _DATA, _KOTLIN
     _DATA = data
+    _KOTLIN = language == "kotlin"
     return _normalize(node)
 
 
@@ -202,7 +205,7 @@ def _try_leaf(node, mode: str, head: bool):
         return _callee_leaf(node)
     if mode == "path":
         return _PENDING
-    if node.type in _SKIP:
+    if node.type in _SKIP or (_KOTLIN and kotlin_norm.is_noise(node)):
         return None
     if node.type in _OPERATORS:
         return [K("symbol"), node.type]

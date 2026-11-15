@@ -182,7 +182,7 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
     data, tree = parse(source, grammar)
     entries = []
     for node in pick(data, tree.root_node):
-        normalized = normalize(node, data)
+        normalized = normalize(node, data, language)
         if normalized is None:
             continue
         entries.append(
