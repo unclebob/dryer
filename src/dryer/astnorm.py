@@ -166,6 +166,18 @@ def _text(node) -> str:
 _PENDING = object()
 
 
+def _kotlin_members(node):
+    """(child, mode) pairs of a Kotlin node that is read as a flat list, else None."""
+
+    if node.type == "call_suffix":
+        return [(child, "norm") for child in kotlin_norm.suffix_items(node)]
+    infix = kotlin_norm.infix_parts(node)
+    if infix is None:
+        return None
+    left, name, right = infix
+    return [(left, "norm"), (name, "callee"), (right, "norm")]
+
+
 def _kind(node) -> str:
     return kotlin_norm.kind(node) if _KOTLIN else node.type
 
@@ -220,14 +232,22 @@ def _named_leaf(node, head: bool):
     return _PENDING
 
 
+def _dropped(node) -> bool:
+    return node.type in _SKIP or (_KOTLIN and kotlin_norm.is_noise(node))
+
+
+def _is_operator(node) -> bool:
+    return node.type in _OPERATORS or (_KOTLIN and kotlin_norm.is_operator(node))
+
+
 def _try_leaf(node, mode: str, head: bool):
     if mode == "callee":
         return _callee_leaf(node)
     if mode == "path":
         return _PENDING
-    if node.type in _SKIP or (_KOTLIN and kotlin_norm.is_noise(node)):
+    if _dropped(node):
         return None
-    if node.type in _OPERATORS or (_KOTLIN and kotlin_norm.is_operator(node)):
+    if _is_operator(node):
         return [K("symbol"), node.type]
     if not node.is_named:
         return None
@@ -291,12 +311,9 @@ def _jobs(node, mode: str, head: bool):
     inner = _inner(node)
     if inner is not None:
         return [(inner, "norm", head)]
-    if _KOTLIN and node.type == "call_suffix":
-        return [(child, "norm", False) for child in kotlin_norm.suffix_items(node)]
-    infix = kotlin_norm.infix_parts(node) if _KOTLIN else None
-    if infix is not None:
-        left, name, right = infix
-        return [(left, "norm", False), (name, "callee", False), (right, "norm", False)]
+    members = _kotlin_members(node) if _KOTLIN else None
+    if members is not None:
+        return [(child, child_mode, False) for child, child_mode in members]
     if node.type in _CALLS:
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
@@ -378,19 +395,9 @@ def _callee_value(node, cache):
     return cache[(id(node), "norm", True)]
 
 
-def _assemble_items(node, items, cache):
-    children = []
-    for child in items:
-        norm = cache[(id(child), "norm", False)]
-        if norm is not None:
-            children.append(norm)
-    return [K(node.type), *children]
-
-
-def _assemble_infix(node, parts, cache):
-    left, name, right = parts
+def _assemble_members(node, members, cache):
     out = [K(node.type)]
-    for child, mode in ((left, "norm"), (name, "callee"), (right, "norm")):
+    for child, mode in members:
         norm = cache[(id(child), mode, False)]
         if norm is not None:
             out.append(norm)
@@ -398,7 +405,7 @@ def _assemble_infix(node, parts, cache):
 
 
 def _assemble_children(node, cache):
-    return _assemble_items(node, node.children, cache)
+    return _assemble_members(node, [(child, "norm") for child in node.children], cache)
 
 
 def _assemble(node, mode: str, head: bool, cache):
@@ -409,11 +416,9 @@ def _assemble(node, mode: str, head: bool, cache):
     inner = _inner(node)
     if inner is not None:
         return cache[(id(inner), "norm", head)]
-    if _KOTLIN and node.type == "call_suffix":
-        return _assemble_items(node, kotlin_norm.suffix_items(node), cache)
-    infix = kotlin_norm.infix_parts(node) if _KOTLIN else None
-    if infix is not None:
-        return _assemble_infix(node, infix, cache)
+    members = _kotlin_members(node) if _KOTLIN else None
+    if members is not None:
+        return _assemble_members(node, members, cache)
     if node.type in _CALLS:
         return _assemble_call(node, cache)
     if node.type in _ATTRIBUTES:
