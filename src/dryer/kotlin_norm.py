@@ -11,7 +11,6 @@ from __future__ import annotations
 NOISE = {
     "modifiers",
     "annotation",
-    "file_annotation",
     "parameter_modifiers",
     "type_modifiers",
 }
