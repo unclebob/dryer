@@ -166,6 +166,10 @@ def _text(node) -> str:
 _PENDING = object()
 
 
+def _kind(node) -> str:
+    return kotlin_norm.kind(node) if _KOTLIN else node.type
+
+
 def _inner(node):
     """The one expression a wrapper node stands for, else None."""
 
@@ -223,7 +227,7 @@ def _try_leaf(node, mode: str, head: bool):
         return _PENDING
     if node.type in _SKIP or (_KOTLIN and kotlin_norm.is_noise(node)):
         return None
-    if node.type in _OPERATORS:
+    if node.type in _OPERATORS or (_KOTLIN and kotlin_norm.is_operator(node)):
         return [K("symbol"), node.type]
     if not node.is_named:
         return None
@@ -335,7 +339,7 @@ def _assemble_attr(node, head: bool, cache):
     if not named:
         return [K(node.type)]
     *objects, name = named
-    parts = [K(node.type)]
+    parts = [K(_kind(node))]
     for obj in objects:
         norm = cache[(id(obj), "norm", False)]
         if norm is not None:

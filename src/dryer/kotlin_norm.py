@@ -44,3 +44,30 @@ def suffix_items(node):
         else:
             items.append(child)
     return items
+
+# Tokens that are operators wherever they stand ...
+TOKENS = {"?:", "!!", "..", "..<", "::"}
+
+# ... and keywords that mean something only under one kind of parent.
+PARENT_TOKENS = {
+    "check_expression": {"is", "in"},
+    "range_test": {"in"},
+    "type_test": {"is"},
+    "as_expression": {"as", "as?"},
+    "jump_expression": {"return", "return@", "throw", "break", "break@", "continue", "continue@"},
+}
+
+
+def is_operator(node) -> bool:
+    if node.type in TOKENS:
+        return True
+    parent = node.parent
+    return parent is not None and node.type in PARENT_TOKENS.get(parent.type, ())
+
+
+def kind(node) -> str:
+    """The node type, with a `?.` suffix told apart from a `.` suffix."""
+
+    if node.type == "navigation_suffix" and node.children[0].type == "?.":
+        return "safe_navigation_suffix"
+    return node.type
