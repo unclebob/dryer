@@ -20,8 +20,9 @@ NOISE = {
 def is_noise(node) -> bool:
     return node.type in NOISE
 
-# Nodes that only wrap one expression: an argument, with or without a label.
-WRAPPERS = {"value_argument"}
+# Nodes that only wrap one expression: an argument (with or without a label)
+# or a trailing lambda (with or without annotation or label).
+WRAPPERS = {"value_argument", "annotated_lambda"}
 
 
 def wrapped(node):
@@ -31,3 +32,15 @@ def wrapped(node):
         return None
     named = node.named_children
     return named[-1] if named else None
+
+
+def suffix_items(node):
+    """Everything a call suffix passes: parenthesised arguments, then a trailing lambda."""
+
+    items = []
+    for child in node.named_children:
+        if child.type == "value_arguments":
+            items.extend(child.named_children)
+        else:
+            items.append(child)
+    return items

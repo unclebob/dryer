@@ -287,6 +287,8 @@ def _jobs(node, mode: str, head: bool):
     inner = _inner(node)
     if inner is not None:
         return [(inner, "norm", head)]
+    if _KOTLIN and node.type == "call_suffix":
+        return [(child, "norm", False) for child in kotlin_norm.suffix_items(node)]
     if node.type in _CALLS:
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
@@ -368,13 +370,17 @@ def _callee_value(node, cache):
     return cache[(id(node), "norm", True)]
 
 
-def _assemble_children(node, cache):
+def _assemble_items(node, items, cache):
     children = []
-    for child in node.children:
+    for child in items:
         norm = cache[(id(child), "norm", False)]
         if norm is not None:
             children.append(norm)
     return [K(node.type), *children]
+
+
+def _assemble_children(node, cache):
+    return _assemble_items(node, node.children, cache)
 
 
 def _assemble(node, mode: str, head: bool, cache):
@@ -385,6 +391,8 @@ def _assemble(node, mode: str, head: bool, cache):
     inner = _inner(node)
     if inner is not None:
         return cache[(id(inner), "norm", head)]
+    if _KOTLIN and node.type == "call_suffix":
+        return _assemble_items(node, kotlin_norm.suffix_items(node), cache)
     if node.type in _CALLS:
         return _assemble_call(node, cache)
     if node.type in _ATTRIBUTES:
