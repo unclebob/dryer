@@ -1,6 +1,6 @@
 # dryer
 
-dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and Python. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
+dryer finds candidate duplicate code in Clojure, Java, Kotlin, Go, TypeScript, Rust, and Python. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
 
 Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). The other languages use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. A form is only compared with forms written in the same language.
 
@@ -37,6 +37,13 @@ int alpha(int[] xs) {
 def beta(items):
     kept = filter(items, even)
     return map(kept, dec)
+```
+
+```kotlin
+fun gamma(entries: List<Int>): List<Int> {
+    val picked = filter(entries, odd)
+    return map(picked, inc)
+}
 ```
 
 What stays is the call or method name, the operator, and the shape of the tree. What drops out is the local name, the field name, the literal, and the keyword. A Clojure keyword call `(:kind m)` and `(:id row)` is the same shape. So is `order.total` and `row.amount`.
@@ -97,10 +104,13 @@ DUPLICATE score=0.89
 | --- | --- | --- |
 | Clojure | every top-level form except `ns` | reader-conditional branches other than `:clj` |
 | Java | methods with a body | constructors, abstract methods, methods inside anonymous or local classes |
+| Kotlin | functions with a block or `=` body, secondary constructors with a body, getters and setters with a body | signatures without a body, constructors that only delegate, anything inside another unit, a lambda, an anonymous `object` or an anonymous function |
 | Go | functions and methods with a body | function literals stay inside the enclosing function |
 | TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
+
+Kotlin files are `.kt`. `*.kts` (so `build.gradle.kts`) is never read, and `*Test.kt` and `*Tests.kt` are test files like the other languages' test names. In Kotlin, modifiers, annotations, and named-argument labels drop out, and every string template is one literal. The called function or method stays, infix names included (`a shl 2`). `?.`, `!!`, and `?:` stay as operators distinct from `.` and from each other, as do `return`, `throw`, `break`, `continue`, `is`, `in`, `as`. A trailing-lambda call has the shape of the parenthesised one: `f { }`, `f() { }` and `f({ })` match, and so do `f(a) { }` and `f(a, { })`. A spread `*xs` argument is read as the plain argument.
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 
