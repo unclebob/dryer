@@ -28,6 +28,7 @@ _IDENTIFIERS = {
     "shorthand_property_identifier",
     "shorthand_property_identifier_pattern",
     "package_identifier",
+    "simple_identifier",
 }
 
 _LITERALS = {
@@ -127,6 +128,8 @@ _ATTRIBUTES = {
     "selector_expression",
     "field_access",
     "field_expression",
+    "navigation_expression",
+    "navigation_suffix",
 }
 
 _SCOPED = {
@@ -134,7 +137,7 @@ _SCOPED = {
     "scoped_type_identifier",
 }
 
-_ARG_LISTS = {"argument_list", "arguments"}
+_ARG_LISTS = {"argument_list", "arguments", "call_suffix"}
 _TYPE_ARGS = {"type_arguments", "type_parameters"}
 
 _DATA: bytes = b""
