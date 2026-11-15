@@ -64,6 +64,11 @@ _LITERALS = {
     "template_string",
     "regex",
     "regex_literal",
+    "real_literal",
+    "hex_literal",
+    "bin_literal",
+    "long_literal",
+    "unsigned_literal",
 }
 
 _OPERATORS = {
