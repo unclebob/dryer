@@ -208,3 +208,23 @@ def test_a_java_modifier_still_counts_in_java():
     marked = "class A {\n  @Override\n  public int a(int x) {\n    return f(x);\n  }\n}\n"
     found = [entries_in_source("java", src, "A.java", "A.java")[0][0] for src in (plain, marked)]
     assert jaccard(found[0].fingerprints, found[1].fingerprints) < 1.0
+
+
+def _returning(expression: str) -> str:
+    return f"fun f(a: Int): Int {{\n    val x = {expression}\n    return use(x)\n}}\n"
+
+
+def test_every_kind_of_literal_is_one_literal_node():
+    base = _returning("1")
+    for literal in ["2L", "0xFF", "0b101", "1.5", "2.5f", "7u", "'c'", "true", "null", '"text"']:
+        assert score(base, _returning(literal)) == 1.0, literal
+
+
+def test_a_string_template_is_one_literal_node():
+    base = _returning('"plain"')
+    assert score(base, _returning('"a $b ${c + d} e"')) == 1.0
+    assert score(base, _returning('"""raw $b"""')) == 1.0
+
+
+def test_a_literal_is_not_a_name():
+    assert score(_returning("1"), _returning("other")) < 1.0
