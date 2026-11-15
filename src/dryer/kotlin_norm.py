@@ -19,3 +19,15 @@ NOISE = {
 
 def is_noise(node) -> bool:
     return node.type in NOISE
+
+# Nodes that only wrap one expression: an argument, with or without a label.
+WRAPPERS = {"value_argument"}
+
+
+def wrapped(node):
+    """The expression a pure wrapper stands for (a label and `=` are dropped), else None."""
+
+    if node.type not in WRAPPERS:
+        return None
+    named = node.named_children
+    return named[-1] if named else None

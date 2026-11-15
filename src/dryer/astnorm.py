@@ -166,6 +166,17 @@ def _text(node) -> str:
 _PENDING = object()
 
 
+def _inner(node):
+    """The one expression a wrapper node stands for, else None."""
+
+    named = node.named_children
+    if node.type == "parenthesized_expression" and len(named) == 1:
+        return named[0]
+    if _KOTLIN:
+        return kotlin_norm.wrapped(node)
+    return None
+
+
 def _is_literal(node) -> bool:
     if node.type not in _LITERALS:
         return False
@@ -273,8 +284,9 @@ def _jobs(node, mode: str, head: bool):
         return _callee_jobs(node)
     if mode == "path":
         return _path_jobs(node)
-    if node.type == "parenthesized_expression" and len(node.named_children) == 1:
-        return [(node.named_children[0], "norm", head)]
+    inner = _inner(node)
+    if inner is not None:
+        return [(inner, "norm", head)]
     if node.type in _CALLS:
         return _call_jobs(node)
     if node.type in _ATTRIBUTES:
@@ -370,9 +382,9 @@ def _assemble(node, mode: str, head: bool, cache):
         return _callee_value(node, cache)
     if mode == "path":
         return _assemble_path(node, cache)
-    if node.type == "parenthesized_expression" and len(node.named_children) == 1:
-        child = node.named_children[0]
-        return cache[(id(child), "norm", head)]
+    inner = _inner(node)
+    if inner is not None:
+        return cache[(id(inner), "norm", head)]
     if node.type in _CALLS:
         return _assemble_call(node, cache)
     if node.type in _ATTRIBUTES:
