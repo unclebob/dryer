@@ -331,3 +331,31 @@ def test_keywords_count_only_under_their_own_parent():
     assert '[:symbol "return"]' in _atoms(looping)
     assert '[:symbol "fun"]' not in _atoms(looping)
     assert '[:symbol "val"]' not in _atoms("fun f() {\n    val x = 1\n    use(x)\n}\n")
+
+
+def test_an_infix_function_name_stays_like_a_called_name():
+    assert score(_expr("a shl 2"), _expr("b shl 3")) == 1.0
+    assert score(_expr("a shl 2"), _expr("a shr 2")) < 1.0
+    assert score(_expr("a shl 2"), _expr("a + 2")) < 1.0
+
+
+def test_control_flow_keywords_give_different_shapes():
+    def body(statement: str) -> str:
+        return f"fun f(a: Int): Int {{\n    {statement}\n    return use(a)\n}}\n"
+
+    shapes = [
+        "if (ok(a)) { use(a) }",
+        "while (ok(a)) { use(a) }",
+        "for (i in a) { use(i) }",
+        "when (a) { 1 -> use(a) }",
+        "try { use(a) } catch (e: Exception) { use(a) }",
+    ]
+    for index, left in enumerate(shapes):
+        for right in shapes[index + 1 :]:
+            assert score(body(left), body(right)) < 1.0, (left, right)
+
+
+def test_kotlin_scores_one_for_the_readme_example_shape():
+    left = "fun alpha(xs: List<Int>): List<Int> {\n    val ys = filter(xs, odd)\n    return map(ys, inc)\n}\n"
+    right = "fun beta(items: List<Int>): List<Int> {\n    val kept = filter(items, even)\n    return map(kept, dec)\n}\n"
+    assert score(left, right) == 1.0
