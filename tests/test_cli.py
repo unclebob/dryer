@@ -368,3 +368,21 @@ def test_walking_keeps_contest_and_skips_tests_and_gradle_scripts(tmp_path):
         write_source(tmp_path, f"src/{name}", "fun f() {}\n")
     found = iter_source_files([tmp_path])
     assert [path.name for path in found] == ["Contest.kt"]
+
+
+def test_kotlin_project_report(tmp_path, capsys):
+    left = "fun alpha(xs: List<Int>): List<Int> {\n    val ys = filter(xs, odd)\n    return map(ys, inc)\n}\n"
+    right = "@Suppress(\"x\")\nprivate fun beta(items: List<Int>): List<Int> {\n    val kept = filter(items, even)\n    return map(kept, dec)\n}\n"
+    write_source(tmp_path, "src/Left.kt", left)
+    write_source(tmp_path, "src/Right.kt", right)
+    write_source(tmp_path, "src/LeftTest.kt", left)
+    write_source(tmp_path, "build.gradle.kts", left)
+    code = run(["--root", str(tmp_path), "--min-lines", "3", "--min-nodes", "1"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "DUPLICATE score=1.00" in out
+    assert "src/Left.kt:1-4" in out
+    assert "src/Right.kt:1-5" in out
+    assert "LeftTest" not in out
+    assert "gradle" not in out
+    assert ':language "kotlin"' in (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8")
