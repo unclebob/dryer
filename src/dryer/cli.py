@@ -29,7 +29,7 @@ those structural fingerprints, the same score as dry4clj.
 
 Prints a report and writes .metrics/dry.edn.
 
-Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
+Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Kotlin (.kt), Go (.go),
 TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
 
 Options:

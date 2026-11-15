@@ -348,3 +348,23 @@ def test_a_second_report_replaces_the_snapshot(tmp_path, capsys):
     assert run(args) == 0
     assert run(args) == 0
     assert (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8") == "{:candidates []}\n"
+
+
+def test_kotlin_sources_are_found_and_gradle_scripts_are_not():
+    assert language_of("src/main/kotlin/App.kt") == "kotlin"
+    assert language_of("build.gradle.kts") is None
+    assert language_of("settings.kts") is None
+
+
+def test_kotlin_test_files_are_test_files_but_contest_is_not():
+    assert is_test_file("src/main/kotlin/OrderTest.kt")
+    assert is_test_file("src/main/kotlin/OrderTests.kt")
+    assert not is_test_file("src/main/kotlin/Contest.kt")
+    assert not is_test_file("src/main/kotlin/Order.kt")
+
+
+def test_walking_keeps_contest_and_skips_tests_and_gradle_scripts(tmp_path):
+    for name in ("Contest.kt", "OrderTest.kt", "OrderTests.kt", "build.gradle.kts"):
+        write_source(tmp_path, f"src/{name}", "fun f() {}\n")
+    found = iter_source_files([tmp_path])
+    assert [path.name for path in found] == ["Contest.kt"]
