@@ -287,6 +287,26 @@ def test_a_threshold_must_be_a_number(capsys):
     assert "--threshold requires a number" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("value", ["nan", "NaN", "inf", "Infinity", " -inf", "1e309", "1.1", " -0.1"])
+def test_invalid_threshold_stops_before_selecting_files(value, monkeypatch, capsys):
+    def select_files_must_not_run(_options):
+        pytest.fail("Invalid thresholds must be rejected before selecting files")
+
+    monkeypatch.setattr("dryer.cli.select_files", select_files_must_not_run)
+    assert run(["--threshold", value]) == 1
+    captured = capsys.readouterr()
+    assert "--threshold must be between 0 and 1" in captured.err
+    assert "Usage: dryer" in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.parametrize("value", ["0", "0.82", "1"])
+def test_threshold_accepts_values_in_the_inclusive_range(value):
+    options = parse_args(["--threshold", value])
+    assert options.action == "scan"
+    assert options.threshold == float(value)
+
+
 def test_parse_reads_the_process_arguments(monkeypatch):
     monkeypatch.setattr("dryer.cli.sys.argv", ["dryer", "only-this"])
     assert parse_args().positionals == ["only-this"]
