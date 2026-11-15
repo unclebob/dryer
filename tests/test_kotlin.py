@@ -228,3 +228,21 @@ def test_a_string_template_is_one_literal_node():
 
 def test_a_literal_is_not_a_name():
     assert score(_returning("1"), _returning("other")) < 1.0
+
+
+def _call(arguments: str) -> str:
+    return f"fun f(a: Int): Int {{\n    val x = make({arguments})\n    return use(x)\n}}\n"
+
+
+def test_a_named_argument_label_is_dropped():
+    assert score(_call("1, 2"), _call("first = 1, second = 2")) == 1.0
+    assert score(_call("1, 2"), _call("second = 1, first = 2")) == 1.0
+
+
+def test_a_named_argument_keeps_its_value_structure():
+    assert score(_call("one(1)"), _call("n = one(1)")) == 1.0
+    assert score(_call("one(1)"), _call("n = other(1)")) < 1.0
+
+
+def test_an_argument_count_still_counts():
+    assert score(_call("1, 2"), _call("n = 1")) < 1.0
