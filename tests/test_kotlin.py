@@ -359,3 +359,58 @@ def test_kotlin_scores_one_for_the_readme_example_shape():
     left = "fun alpha(xs: List<Int>): List<Int> {\n    val ys = filter(xs, odd)\n    return map(ys, inc)\n}\n"
     right = "fun beta(items: List<Int>): List<Int> {\n    val kept = filter(items, even)\n    return map(kept, dec)\n}\n"
     assert score(left, right) == 1.0
+
+
+def _symbols(source: str) -> set[str]:
+    return {atom for atom in _atoms(source) if atom.startswith("[:symbol ")}
+
+
+def test_each_always_operator_token_is_kept():
+    for expression, token in [
+        ("a ?: b", "?:"),
+        ("a!!", "!!"),
+        ("a..b", ".."),
+        ("a..<b", "..<"),
+        ("::use", "::"),
+    ]:
+        assert f'[:symbol "{token}"]' in _symbols(_expr(expression)), token
+
+
+def test_each_keyword_is_kept_under_its_own_parent():
+    cases = [
+        ("a is B", "is"),
+        ("a in b", "in"),
+        ("a as B", "as"),
+        ("a as? B", "as?"),
+    ]
+    for expression, token in cases:
+        assert f'[:symbol "{token}"]' in _symbols(_expr(expression)), token
+    in_when = "fun f(a: Any?): Int {\n    return when (a) {\n        in b -> 1\n        is B -> 2\n        else -> 3\n    }\n}\n"
+    assert {'[:symbol "in"]', '[:symbol "is"]'} <= _symbols(in_when)
+
+
+def test_each_jump_keyword_is_kept():
+    for statement, token in [
+        ("return a", "return"),
+        ("return@run a", "return@"),
+        ("throw a", "throw"),
+        ("break", "break"),
+        ("break@loop", "break@"),
+        ("continue", "continue"),
+        ("continue@loop", "continue@"),
+    ]:
+        assert f'[:symbol "{token}"]' in _symbols(_flow(statement)), token
+
+
+def test_no_declaration_noise_node_reaches_the_fingerprints():
+    source = """\
+class Box {
+    @Suppress("x")
+    private suspend fun f(@Body g: suspend () -> Unit, h: List<@Ann Int>): Int {
+        foo(@Ann bar)
+        return 1
+    }
+}
+"""
+    kept = [atom for atom in _atoms(source) if "modifiers" in atom or "annotation" in atom]
+    assert kept == []
