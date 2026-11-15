@@ -246,3 +246,24 @@ def test_a_named_argument_keeps_its_value_structure():
 
 def test_an_argument_count_still_counts():
     assert score(_call("1, 2"), _call("n = 1")) < 1.0
+
+
+def _statement(call: str) -> str:
+    return f"fun f(a: Int): Int {{\n    {call}\n    return use(a)\n}}\n"
+
+
+def test_a_trailing_lambda_has_the_shape_of_a_parenthesised_one():
+    shapes = ["run { a }", "run() { a }", "run({ a })"]
+    for left in shapes:
+        for right in shapes:
+            assert score(_statement(left), _statement(right)) == 1.0, (left, right)
+
+
+def test_a_trailing_lambda_after_arguments_matches_a_last_argument_lambda():
+    assert score(_statement("run(a) { a }"), _statement("run(a, { a })")) == 1.0
+    assert score(_statement("a.run(1, 2) { a }"), _statement("a.run(1, 2, { a })")) == 1.0
+
+
+def test_the_argument_before_a_lambda_still_counts():
+    assert score(_statement("run(a) { a }"), _statement("run { a }")) < 1.0
+    assert score(_statement("run { a }"), _statement("run({ a }, { a })")) < 1.0
