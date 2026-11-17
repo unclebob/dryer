@@ -1,8 +1,10 @@
+import random
 from pathlib import Path
 
 from dryer.extract import entries_in_source
 from dryer.model import Entry
 from dryer.scan import _keep, find_duplicates, scan_files
+from dryer.shape import jaccard
 from dryer.treesitter import descendants, end_line, parse
 
 
@@ -593,6 +595,24 @@ def test_the_higher_score_is_reported_first():
     ]
     found = find_duplicates(partial + exact, 0.3)
     assert [item.score for item in found] == [1.0, 1 / 3]
+
+
+def test_candidate_filtering_reports_the_same_pairs_as_comparing_every_pair():
+    generator = random.Random(7)
+    vocabulary = [f"t{number}" for number in range(40)]
+    entries = [
+        _entry(f"f{position}.py", 1, 4, set(generator.sample(vocabulary, generator.randint(0, 12))))
+        for position in range(120)
+    ]
+    for threshold in (0.0, 0.1, 1 / 3, 0.5, 0.8, 0.82, 0.99, 1.0):
+        expected = [
+            (left.file, right.file)
+            for index, left in enumerate(entries)
+            for right in entries[index + 1 :]
+            if jaccard(left.fingerprints, right.fingerprints) >= threshold
+        ]
+        found = [(item.left.file, item.right.file) for item in find_duplicates(entries, threshold)]
+        assert sorted(found) == sorted(expected), threshold
 
 
 def test_keep_uses_the_line_and_node_minimums():

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import math
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from dryer.discover import language_of
 from dryer.extract import entries_in_source
 from dryer.model import Duplicate, Entry, Span
 from dryer.shape import jaccard
+
+# Widens the prefix and size bounds against float rounding in threshold * size; a wider bound
+# only adds candidates, which the exact Jaccard check still rejects.
+_SLACK = 1e-9
 
 
 def display_path(path: Path, root: Path) -> str:
@@ -61,6 +67,36 @@ def _duplicate_key(item: Duplicate):
     )
 
 
+def _prefix_length(size: int, threshold: float) -> int:
+    return size - math.ceil(threshold * size - _SLACK) + 1
+
+
+def _candidate_pairs(group: list[Entry], threshold: float) -> list[tuple[int, int]]:
+    """Index pairs (i < j) that can reach the threshold, in ascending order.
+
+    Prefix filtering (Bayardo, Ma, Srikant, "Scaling Up All Pairs Similarity Search", 2007):
+    with each fingerprint set ordered rarest token first, two sets of Jaccard >= t share a token
+    within the first n - ceil(t * n) + 1 tokens of each, and the smaller holds at least t times
+    as many tokens as the larger. Every pair is a candidate at a threshold of 0 or below.
+    """
+
+    if threshold <= 0:
+        return [(i, j) for i in range(len(group)) for j in range(i + 1, len(group))]
+    frequency = Counter(token for entry in group for token in entry.fingerprints)
+    ordered = [sorted(entry.fingerprints, key=lambda token: (frequency[token], token)) for entry in group]
+    index: defaultdict[str, list[int]] = defaultdict(list)
+    pairs: set[tuple[int, int]] = set()
+    for current in sorted(range(len(group)), key=lambda position: len(ordered[position])):
+        tokens = ordered[current]
+        smallest = threshold * len(tokens) - _SLACK
+        for token in tokens[: _prefix_length(len(tokens), threshold)]:
+            for other in index[token]:
+                if len(ordered[other]) >= smallest:
+                    pairs.add((min(other, current), max(other, current)))
+            index[token].append(current)
+    return sorted(pairs)
+
+
 def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
     """Pair forms of the same language. Each unordered pair is reported once."""
 
@@ -70,22 +106,22 @@ def find_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
 
     found: list[Duplicate] = []
     for language, group in by_language.items():
-        for index, left in enumerate(group):
-            for right in group[index + 1 :]:
-                if _same_span(left, right):
-                    continue
-                score = jaccard(left.fingerprints, right.fingerprints)
-                if score < threshold:
-                    continue
-                found.append(
-                    Duplicate(
-                        score=score,
-                        language=language,
-                        left=Span(left.file, left.start_line, left.end_line),
-                        right=Span(right.file, right.start_line, right.end_line),
-                        left_nodes=left.nodes,
-                        right_nodes=right.nodes,
-                    )
+        for index, other in _candidate_pairs(group, threshold):
+            left, right = group[index], group[other]
+            if _same_span(left, right):
+                continue
+            score = jaccard(left.fingerprints, right.fingerprints)
+            if score < threshold:
+                continue
+            found.append(
+                Duplicate(
+                    score=score,
+                    language=language,
+                    left=Span(left.file, left.start_line, left.end_line),
+                    right=Span(right.file, right.start_line, right.end_line),
+                    left_nodes=left.nodes,
+                    right_nodes=right.nodes,
                 )
+            )
     found.sort(key=_duplicate_key)
     return found
