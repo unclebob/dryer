@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from dryer.discover import language_of
 from dryer.extract import entries_in_source
 from dryer.model import Duplicate, Entry, Span
 from dryer.shape import jaccard
+
+
+# https://go.dev/s/generatedcode, and the @generated marker other generators use.
+GENERATED = re.compile(r"^// Code generated .* DO NOT EDIT\.$|@generated\b", re.MULTILINE)
 
 
 def display_path(path: Path, root: Path) -> str:
@@ -33,6 +38,8 @@ def scan_files(
         if language is None:
             continue
         source = path.read_text(encoding="utf-8", errors="replace")
+        if GENERATED.search(source[:4096]):
+            continue
         file = display_path(path, root)
         found, warning = entries_in_source(language, source, path.as_posix(), file)
         if warning:

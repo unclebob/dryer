@@ -47,7 +47,7 @@ What stays is the call or method name, the operator, and the shape of the tree. 
 ./dryer
 ```
 
-The first run creates `.venv` and installs the tool. From a project root it walks the tree, skips `test`, `spec`, `vendor`, `node_modules`, and `target`, and writes two results:
+The first run creates `.venv` and installs the tool. From a project root it walks the tree, skips `test`, `spec`, `vendor`, `node_modules`, and `target`, and files marked generated (`Code generated ... DO NOT EDIT.` or `@generated`), and writes two results:
 
 - a report on stdout, closest match first
 - `.metrics/dry.edn`, replaced on every successful analysis
