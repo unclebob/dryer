@@ -402,6 +402,211 @@ class Panel {
     ) < 1.0
 
 
+def test_a_generic_constraint_name_does_not_keep_the_functions_apart(tmp_path):
+    assert _scored(
+        tmp_path,
+        """\
+func alpha<T: Equatable>(xs: [T]) -> [T] {
+    let ys = filter(xs, odd)
+    return map(ys, inc)
+}
+""",
+        """\
+func beta<U: Hashable>(items: [U]) -> [U] {
+    let kept = filter(items, even)
+    return map(kept, dec)
+}
+""",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        """\
+func alpha<T>(xs: [T]) -> [T] where T: Equatable {
+    let ys = filter(xs, odd)
+    return map(ys, inc)
+}
+""",
+        """\
+func beta<U>(items: [U]) -> [U] where U: Hashable {
+    let kept = filter(items, even)
+    return map(kept, dec)
+}
+""",
+    ) == 1.0
+
+
+def test_an_extension_method_matches_its_renamed_copy(tmp_path):
+    assert _scored(
+        tmp_path,
+        """\
+extension Array where Element: Equatable {
+    func alpha(xs: [Int]) -> [Int] {
+        let ys = filter(xs, odd)
+        return map(ys, inc)
+    }
+}
+""",
+        """\
+extension Array where Element: Hashable {
+    func beta(items: [Int]) -> [Int] {
+        let kept = filter(items, even)
+        return map(kept, dec)
+    }
+}
+""",
+    ) == 1.0
+
+
+def test_an_async_throws_function_matches_its_renamed_copy(tmp_path):
+    assert _scored(
+        tmp_path,
+        """\
+func alpha(xs: [Int]) async throws -> [Int] {
+    let ys = try await filter(xs, odd)
+    return map(ys, inc)
+}
+""",
+        """\
+func beta(items: [Int]) async throws -> [Int] {
+    let kept = try await filter(items, even)
+    return map(kept, dec)
+}
+""",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        "func alpha() -> Int? {\n    return try? cache()\n}\n",
+        "func beta() -> Int {\n    return try load()\n}\n",
+    ) < 1.0
+
+
+def test_a_main_actor_function_matches_its_renamed_copy(tmp_path):
+    assert _scored(
+        tmp_path,
+        """\
+@MainActor
+func alpha(xs: [Int]) -> [Int] {
+    let ys = filter(xs, odd)
+    return map(ys, inc)
+}
+""",
+        """\
+@MainActor
+func beta(items: [Int]) -> [Int] {
+    let kept = filter(items, even)
+    return map(kept, dec)
+}
+""",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        """\
+struct InvoiceView {
+    @MainActor
+    var body: String {
+        return Text(title)
+    }
+}
+""",
+        """\
+struct ReceiptView {
+    @MainActor
+    var body: String {
+        return Text(heading)
+    }
+}
+""",
+    ) == 1.0
+
+
+def test_a_nested_block_comment_is_not_part_of_the_structure(tmp_path):
+    commented = """\
+func alpha(xs: [Int]) -> [Int] {
+    /* outer /* inner */ still comment */
+    let ys = filter(xs, odd)
+    return map(ys, inc)
+}
+"""
+    assert _scored(tmp_path, commented, SWIFT_RIGHT) == 1.0
+
+
+def test_multiline_interpolation_keeps_the_expression_and_drops_the_name(tmp_path):
+    assert _scored(
+        tmp_path,
+        '''func alpha(order: Order) -> String {\n    return """\n    \\(order.total)\n    """\n}\n''',
+        '''func beta(row: Row) -> String {\n    return """\n    \\(row.amount)\n    """\n}\n''',
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        '''func alpha(order: Order) -> String {\n    return """\n    \\(order.total)\n    """\n}\n''',
+        'func beta() -> String {\n    return """\n    hello\n    """\n}\n',
+    ) < 1.0
+
+
+def test_a_getter_and_setter_match_when_only_the_names_change(tmp_path):
+    assert _scored(
+        tmp_path,
+        """\
+struct Left {
+    var value: Int {
+        get { return cache(stored) }
+        set { store(fresh) }
+    }
+}
+""",
+        """\
+struct Right {
+    var amount: Int {
+        get { return cache(kept) }
+        set { store(next) }
+    }
+}
+""",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        """\
+struct Left {
+    var value: Int {
+        get { return cache(stored) }
+        set { store(fresh) }
+    }
+}
+""",
+        """\
+struct Right {
+    var amount: Int {
+        get { return cache(kept) }
+        set { write(next) }
+    }
+}
+""",
+    ) < 1.0
+
+
+def test_negation_and_force_unwrap_stay_in_the_score(tmp_path):
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: Bool) -> Bool {\n    return !xs\n}\n",
+        "func beta(items: Bool) -> Bool {\n    return !items\n}\n",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: Bool) -> Bool {\n    return !xs\n}\n",
+        "func beta(items: Bool) -> Bool {\n    return items\n}\n",
+    ) < 1.0
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: Int?) -> Int {\n    return xs!\n}\n",
+        "func beta(items: Int?) -> Int {\n    return items!\n}\n",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: Int?) -> Int {\n    return xs!\n}\n",
+        "func beta(items: Int?) -> Int {\n    return items\n}\n",
+    ) < 1.0
+
+
 def test_a_top_level_swift_closure_matches_its_renamed_copy(tmp_path):
     left = """\
 let alpha = { (xs: [Int]) -> [Int] in
