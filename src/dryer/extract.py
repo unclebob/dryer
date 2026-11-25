@@ -130,10 +130,32 @@ def _typescript_nodes(data: bytes, root) -> list:
     return found
 
 
+# A closure, a local function, and a function written inside a view body stay
+# inside the form that contains them. A protocol requirement has no body.
+_SWIFT_NEST = {
+    "function_declaration",
+    "protocol_function_declaration",
+    "lambda_literal",
+    "computed_property",
+    "init_declaration",
+    "subscript_declaration",
+}
+
+
+def _swift_property(node) -> bool:
+    return node.type == "property_declaration" and _has(node, "computed_property", "lambda_literal")
+
+
 def _swift_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
-        if node.type == "function_declaration" and _has(node, "function_body"):
+        if _inside(node, _SWIFT_NEST):
+            continue
+        if node.type == "function_declaration":
+            found.append(node)
+        elif node.type == "protocol_function_declaration" and _has(node, "statements"):
+            found.append(node)
+        elif _swift_property(node):
             found.append(node)
     return found
 
