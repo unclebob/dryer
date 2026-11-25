@@ -522,6 +522,47 @@ xs.map((item: number) => item + 1);
     ) == [(2, 4), (6, 12)]
 
 
+def test_php_keeps_methods_and_top_level_functions():
+    assert spans(
+        "php",
+        """\
+<?php
+function top($xs) {
+    $inner = function ($ys) {
+        return $ys;
+    };
+    return array_map(fn ($z) => $z, $xs);
+}
+abstract class Board {
+    abstract protected function declared($xs);
+    public function alpha($xs) {
+        return $xs;
+    }
+}
+interface Shape {
+    public function area();
+}
+trait Sized {
+    public function size($xs) {
+        return count($xs);
+    }
+}
+enum Kind {
+    case Small;
+    public function label() {
+        return 'small';
+    }
+}
+$migration = new class {
+    public function up() {
+        return 1;
+    }
+};
+""",
+        "a.php",
+    ) == [(2, 7), (10, 12), (18, 20), (24, 26)]
+
+
 def test_a_private_field_name_is_not_part_of_the_structure():
     entries = forms(
         "typescript",

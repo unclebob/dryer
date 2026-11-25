@@ -3,7 +3,8 @@
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
-functions inside `mod tests` are test code and are skipped.
+functions inside `mod tests` are test code and are skipped. PHP methods of an
+anonymous class are skipped too: every Laravel migration is one.
 """
 
 from __future__ import annotations
@@ -26,6 +27,9 @@ _DEFINITION_PARENTS = {
     "public_field_definition",
     "property_definition",
 }
+
+_PHP_FUNCTION = {"function_definition", "method_declaration"}
+_PHP_ENCLOSING = _PHP_FUNCTION | {"anonymous_function", "arrow_function", "anonymous_class"}
 
 
 def _grammar(path: str) -> str:
@@ -143,12 +147,23 @@ def _rust_nodes(data: bytes, root) -> list:
     return found
 
 
+def _php_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if node.type not in _PHP_FUNCTION or not _has(node, "compound_statement"):
+            continue
+        if not _inside(node, _PHP_ENCLOSING):
+            found.append(node)
+    return found
+
+
 _PICKERS = {
     "java": ("java", _java_nodes),
     "go": ("go", _go_nodes),
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "php": ("php", _php_nodes),
 }
 
 
