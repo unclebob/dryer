@@ -111,6 +111,26 @@ pub fn beta(items: Vec<i32>) -> Vec<i32> {
 }
 """
 
+PHP_LEFT = """\
+<?php
+class Board {
+    public function alpha(array $xs): array {
+        $ys = array_filter($xs, $this->odd);
+        return Arr::map($this->keep($ys), 1);
+    }
+}
+"""
+
+PHP_RIGHT = """\
+<?php
+class Panel {
+    public function beta(array $items): array {
+        $kept = array_filter($items, $this->even);
+        return Arr::map($this->keep($kept), 2);
+    }
+}
+"""
+
 
 def test_each_language_matches_renamed_locals(tmp_path):
     samples = {
@@ -126,6 +146,8 @@ def test_each_language_matches_renamed_locals(tmp_path):
         "right.tsx": TSX_RIGHT,
         "left.rs": RUST_LEFT,
         "right.rs": RUST_RIGHT,
+        "left.php": PHP_LEFT,
+        "right.php": PHP_RIGHT,
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -133,7 +155,7 @@ def test_each_language_matches_renamed_locals(tmp_path):
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"java", "go", "python", "typescript", "rust"}
+    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "php"}
     assert [(item.left.file, item.right.file) for item in by_language["typescript"]] == [
         ("left.ts", "right.ts"),
         ("left.tsx", "right.tsx"),
@@ -237,7 +259,7 @@ class Right {
 
 
 def _suffix(language: str) -> str:
-    return {"python": "py", "go": "go", "rust": "rs", "java": "java", "typescript": "ts"}[language]
+    return {"python": "py", "go": "go", "rust": "rs", "java": "java", "typescript": "ts", "php": "php"}[language]
 
 
 def test_callee_names_stay_and_member_names_do_not(tmp_path):
@@ -308,6 +330,18 @@ export function beta(items: number[]): number {
   return foo<number>(items.baz);
 }
 """,
+        "left.php": """\
+<?php
+function alpha($xs) {
+    return $xs->total + $xs?->size;
+}
+""",
+        "right.php": """\
+<?php
+function beta($items) {
+    return $items->count + $items?->length;
+}
+""",
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -315,7 +349,7 @@ export function beta(items: number[]): number {
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"python", "go", "rust", "java", "typescript"}
+    assert set(by_language) == {"python", "go", "rust", "java", "typescript", "php"}
     for language, group in by_language.items():
         assert [(item.left.file, item.right.file, item.score) for item in group] == [
             (f"left.{_suffix(language)}", f"right.{_suffix(language)}", 1.0)
@@ -327,11 +361,13 @@ def test_a_different_callee_name_lowers_the_score(tmp_path):
     write_source(tmp_path, "b.py", "def beta(items):\n    return items.select(even)\n")
     write_source(tmp_path, "a.rs", "fn alpha() {\n    Vec::new()\n}\n")
     write_source(tmp_path, "b.rs", "fn beta() {\n    Vec::with_capacity(1)\n}\n")
+    write_source(tmp_path, "a.php", "<?php\nfunction alpha($xs) {\n    return $xs->filter();\n}\n")
+    write_source(tmp_path, "b.php", "<?php\nfunction beta($items) {\n    return $items->select();\n}\n")
     files = sorted(path for path in tmp_path.rglob("*") if path.is_file())
     entries, warnings = scan_files(files, tmp_path, min_lines=1, min_nodes=1)
     assert warnings == []
     found = find_duplicates(entries, threshold=0.0)
-    assert len(found) == 2
+    assert len(found) == 3
     assert all(item.score < 1.0 for item in found)
 
 
@@ -561,6 +597,53 @@ $migration = new class {
 """,
         "a.php",
     ) == [(2, 7), (10, 12), (18, 20), (24, 26)]
+
+
+def _php_score(left_body: str, right_body: str) -> float:
+    left = forms("php", f"<?php\nfunction alpha($xs) {{\n    return {left_body};\n}}\n", "a.php")
+    right = forms("php", f"<?php\nfunction beta($items) {{\n    return {right_body};\n}}\n", "b.php")
+    found = find_duplicates(left + right, threshold=0.0)
+    assert len(found) == 1
+    return found[0].score
+
+
+def test_php_keeps_the_called_name_and_drops_locals():
+    assert _php_score("$xs->save($xs)", "$items->save($items)") == 1.0
+    assert _php_score("Order::query($xs)", "User::query($items)") == 1.0
+    assert _php_score("collect($xs)", "collect($items)") == 1.0
+    assert _php_score("new Order($xs)", "new Order($items)") == 1.0
+    assert _php_score("\\App\\total($xs)", "\\App\\total($items)") == 1.0
+    assert _php_score("$xs->save()", "$xs->delete()") < 1.0
+    assert _php_score("Order::query()", "Order::where()") < 1.0
+    assert _php_score("collect($xs)", "tap($xs)") < 1.0
+    assert _php_score("new Order()", "new Invoice()") < 1.0
+    assert _php_score("\\App\\total($xs)", "\\App\\count($xs)") < 1.0
+
+
+def test_php_this_is_not_a_local():
+    assert _php_score("$this->save()", "$items->save()") < 1.0
+    assert _php_score("$this->total", "$this->count") == 1.0
+
+
+def test_php_literals_normalize_alike():
+    assert _php_score("[true, 'a', 1.5, null]", "[null, 'z', 2, false]") == 1.0
+    assert _php_score("\"a\"", "\"a{$items}\"") < 1.0
+
+
+def test_php_attributes_on_a_method_are_read():
+    assert spans(
+        "php",
+        """\
+<?php
+class Board {
+    #[Computed]
+    public function alpha($xs) {
+        return $xs;
+    }
+}
+""",
+        "a.php",
+    ) == [(3, 6)]
 
 
 def test_a_private_field_name_is_not_part_of_the_structure():
