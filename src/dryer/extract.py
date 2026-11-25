@@ -3,7 +3,8 @@
 Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
-functions inside `mod tests` are test code and are skipped.
+functions inside `mod tests` are test code and are skipped. Swift also
+compares computed properties, a closure bound at file scope, and deinit.
 """
 
 from __future__ import annotations
@@ -130,6 +131,39 @@ def _typescript_nodes(data: bytes, root) -> list:
     return found
 
 
+# A closure, a local function, and a function written inside a view body or a
+# deinit stay inside the form that contains them. A protocol requirement has
+# no body. deinit itself is a method with a body.
+_SWIFT_NEST = {
+    "function_declaration",
+    "protocol_function_declaration",
+    "lambda_literal",
+    "computed_property",
+    "init_declaration",
+    "subscript_declaration",
+    "deinit_declaration",
+}
+_SWIFT_FUNCTION = {"function_declaration", "deinit_declaration"}
+
+
+def _swift_property(node) -> bool:
+    return node.type == "property_declaration" and _has(node, "computed_property", "lambda_literal")
+
+
+def _swift_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if _inside(node, _SWIFT_NEST):
+            continue
+        if node.type in _SWIFT_FUNCTION:
+            found.append(node)
+        elif node.type == "protocol_function_declaration" and _has(node, "statements"):
+            found.append(node)
+        elif _swift_property(node):
+            found.append(node)
+    return found
+
+
 def _rust_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
@@ -149,6 +183,7 @@ _PICKERS = {
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "swift": ("swift", _swift_nodes),
 }
 
 

@@ -1,7 +1,7 @@
 """Find source files and decide which language each one is written in.
 
 The extensions and the skipped directories match crapper and mutator, with
-`.cljd` added because dry4clj reads it.
+`.cljd` added because dry4clj reads it and `.swift` added for Swift.
 """
 
 import os
@@ -21,6 +21,7 @@ EXTENSIONS = {
     ".cts": "typescript",
     ".rs": "rust",
     ".py": "python",
+    ".swift": "swift",
 }
 
 SKIP_DIRS = {
@@ -43,7 +44,27 @@ SKIP_DIRS = {
     ".clj-kondo",
 }
 
-TEST_DIRS = {"test", "tests", "spec", "specs", "__tests__"}
+TEST_DIRS = {"test", "tests", "spec", "specs", "__tests__", "Tests"}
+
+# One suffix list. Swift packages name XCTest files *Tests.swift.
+_TEST_SUFFIXES = (
+    "_test.go",
+    "_test.clj",
+    "_test.cljc",
+    "_test.cljs",
+    "_test.cljd",
+    "_test.bb",
+    ".test.ts",
+    ".spec.ts",
+    ".test.tsx",
+    ".spec.tsx",
+    ".test.mts",
+    ".spec.mts",
+    ".test.cts",
+    ".spec.cts",
+    "_test.py",
+    "Tests.swift",
+)
 
 
 def language_of(path: str | Path) -> str | None:
@@ -57,26 +78,9 @@ def language_of(path: str | Path) -> str | None:
 def is_test_file(path: str | Path) -> bool:
     file_path = Path(path)
     name = file_path.name
-    if name.endswith("_test.go"):
+    if name == "conftest.py" or name.endswith(_TEST_SUFFIXES):
         return True
-    if name.endswith(("_test.clj", "_test.cljc", "_test.cljs", "_test.cljd", "_test.bb")):
-        return True
-    if name.endswith(
-        (
-            ".test.ts",
-            ".spec.ts",
-            ".test.tsx",
-            ".spec.tsx",
-            ".test.mts",
-            ".spec.mts",
-            ".test.cts",
-            ".spec.cts",
-        )
-    ):
-        return True
-    if name == "conftest.py":
-        return True
-    if name.endswith("_test.py") or (name.startswith("test_") and name.endswith(".py")):
+    if name.startswith("test_") and name.endswith(".py"):
         return True
     return any(part in TEST_DIRS for part in file_path.parts)
 

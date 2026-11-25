@@ -126,6 +126,18 @@ def test_each_language_matches_renamed_locals(tmp_path):
         "right.tsx": TSX_RIGHT,
         "left.rs": RUST_LEFT,
         "right.rs": RUST_RIGHT,
+        "left.swift": """\
+func alpha(xs: [Int]) -> [Int] {
+    let ys = filter(xs, odd)
+    return map(ys, inc)
+}
+""",
+        "right.swift": """\
+func beta(items: [Int]) -> [Int] {
+    let kept = filter(items, even)
+    return map(kept, dec)
+}
+""",
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -133,7 +145,7 @@ def test_each_language_matches_renamed_locals(tmp_path):
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"java", "go", "python", "typescript", "rust"}
+    assert set(by_language) == {"java", "go", "python", "typescript", "rust", "swift"}
     assert [(item.left.file, item.right.file) for item in by_language["typescript"]] == [
         ("left.ts", "right.ts"),
         ("left.tsx", "right.tsx"),
@@ -237,7 +249,14 @@ class Right {
 
 
 def _suffix(language: str) -> str:
-    return {"python": "py", "go": "go", "rust": "rs", "java": "java", "typescript": "ts"}[language]
+    return {
+        "python": "py",
+        "go": "go",
+        "rust": "rs",
+        "java": "java",
+        "typescript": "ts",
+        "swift": "swift",
+    }[language]
 
 
 def test_callee_names_stay_and_member_names_do_not(tmp_path):
@@ -308,6 +327,18 @@ export function beta(items: number[]): number {
   return foo<number>(items.baz);
 }
 """,
+        "left.swift": """\
+func alpha(xs: Order) -> Int {
+    let ys = xs.filter(odd)
+    return xs.total
+}
+""",
+        "right.swift": """\
+func beta(items: Order) -> Int {
+    let kept = items.filter(even)
+    return items.count
+}
+""",
     }
     for name, source in samples.items():
         write_source(tmp_path, name, source)
@@ -315,7 +346,7 @@ export function beta(items: number[]): number {
     by_language = {}
     for item in found:
         by_language.setdefault(item.language, []).append(item)
-    assert set(by_language) == {"python", "go", "rust", "java", "typescript"}
+    assert set(by_language) == {"python", "go", "rust", "java", "typescript", "swift"}
     for language, group in by_language.items():
         assert [(item.left.file, item.right.file, item.score) for item in group] == [
             (f"left.{_suffix(language)}", f"right.{_suffix(language)}", 1.0)
