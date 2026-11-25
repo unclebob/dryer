@@ -110,7 +110,7 @@ DUPLICATE score=0.89
 | Python | functions and methods | functions nested inside another function |
 | Swift | functions and methods with a body, computed properties, and file-level closures | initializers, subscripts, protocol requirements, and closures or functions nested inside another form |
 
-A Swift computed property includes a SwiftUI `body`. A method on a struct, class, enum, or extension is a candidate, and so is a protocol method that has a default body. A protocol requirement does not. A closure written inside a function stays in that function. A closure bound with `let` or `var` at file scope is its own candidate, as a top-level arrow function is in TypeScript. Argument labels stay, because in Swift they are part of the call. `>=` and `!=` stay. Locals, field names, and literals, including `nil`, do not. An interpolated string keeps the interpolation.
+A Swift computed property includes a SwiftUI `body`. A method on a struct, class, enum, or extension is a candidate, and so is a protocol method that has a default body. A protocol requirement does not. A closure written inside a function stays in that function. A closure bound with `let` or `var` at file scope is its own candidate, as a top-level arrow function is in TypeScript. Argument labels stay, because in Swift they are part of the call. `>=`, `!=`, `...`, and `..<` stay. Locals, field names, and literals, including `nil`, do not. An interpolated string keeps the interpolation.
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 

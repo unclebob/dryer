@@ -105,6 +105,19 @@ def test_a_different_swift_operator_lowers_the_score(tmp_path):
     ) < 1.0
 
 
+def test_a_different_swift_range_lowers_the_score(tmp_path):
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: Int) -> Bool {\n    return xs..<1\n}\n",
+        "func beta(items: Int) -> Bool {\n    return items..<2\n}\n",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: Int) -> Bool {\n    return xs..<1\n}\n",
+        "func beta(items: Int) -> Bool {\n    return items...1\n}\n",
+    ) < 1.0
+
+
 def test_a_swift_argument_label_is_part_of_the_call(tmp_path):
     assert _scored(
         tmp_path,
