@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from dryer.discover import iter_source_files, language_of
 from dryer.extract import entries_in_source
 from dryer.scan import find_duplicates, scan_files
 
@@ -294,6 +295,16 @@ def test_swift_keeps_methods_bodies_and_top_level_closures_only():
 def test_swiftui_views_match_when_only_the_data_changes(tmp_path):
     assert _scored(tmp_path, INVOICE, RECEIPT) == 1.0
     assert _scored(tmp_path, RECEIPT, LABEL_VIEW) < 1.0
+
+
+def test_a_swift_package_skips_its_tests(tmp_path):
+    body = "func alpha() -> Int {\n    return 1\n}\n"
+    write_source(tmp_path, "Sources/App.swift", body)
+    write_source(tmp_path, "Tests/AppTests.swift", body)
+    write_source(tmp_path, "Sources/HiddenTests.swift", body)
+    relative = [path.relative_to(tmp_path).as_posix() for path in iter_source_files([tmp_path])]
+    assert language_of("Sources/App.swift") == "swift"
+    assert relative == ["Sources/App.swift"]
 
 
 def test_a_top_level_swift_closure_matches_its_renamed_copy(tmp_path):
