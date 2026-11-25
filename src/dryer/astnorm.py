@@ -139,7 +139,8 @@ _ATTRIBUTES = {
 }
 
 # The spelling is the structure: Swift spells >= as custom_operator, and an
-# argument label is part of the call name.
+# argument label is part of the call name. A trailing closure's label is an
+# identifier placed directly on the call_suffix, not a value_argument_label.
 _TEXT_SYMBOLS = {"custom_operator", "value_argument_label"}
 _INTERPOLATED = {"interpolation", "interpolated_expression"}
 
@@ -206,6 +207,13 @@ def _named_leaf(node, head: bool):
     return _PENDING
 
 
+def _trailing_label(node) -> bool:
+    """A trailing-closure label sits on the call, so its spelling stays."""
+
+    parent = node.parent
+    return parent is not None and parent.type == "call_suffix" and node.type in _IDENTIFIERS
+
+
 def _try_leaf(node, mode: str, head: bool):
     if mode == "callee":
         return _callee_leaf(node)
@@ -215,7 +223,7 @@ def _try_leaf(node, mode: str, head: bool):
         return None
     if node.type in _OPERATORS:
         return [K("symbol"), node.type]
-    if node.type in _TEXT_SYMBOLS:
+    if node.type in _TEXT_SYMBOLS or _trailing_label(node):
         return [K("symbol"), _text(node)]
     if not node.is_named:
         return None

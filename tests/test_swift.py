@@ -131,6 +131,43 @@ def test_a_swift_argument_label_is_part_of_the_call(tmp_path):
     ) < 1.0
 
 
+def test_a_trailing_closure_label_is_part_of_the_call(tmp_path):
+    labeled = """\
+func alpha() -> Int {
+    return Button {
+        save()
+    } label: {
+        Text(title)
+    }
+}
+"""
+    renamed = """\
+func beta() -> Int {
+    return Button {
+        save()
+    } label: {
+        Text(heading)
+    }
+}
+"""
+    relabeled = """\
+func beta() -> Int {
+    return Button {
+        save()
+    } action: {
+        Text(title)
+    }
+}
+"""
+    assert _scored(tmp_path, labeled, renamed) == 1.0
+    assert _scored(tmp_path, labeled, relabeled) < 1.0
+    assert _scored(
+        tmp_path,
+        "func alpha(xs: [Int]) -> [Int] {\n    return xs.filter { item in\n        odd(item)\n    }\n}\n",
+        "func beta(items: [Int]) -> [Int] {\n    return items.filter { value in\n        odd(value)\n    }\n}\n",
+    ) == 1.0
+
+
 def test_swift_literals_normalize_and_interpolation_does_not(tmp_path):
     assert _scored(
         tmp_path,
