@@ -332,6 +332,14 @@ def test_changed_source_skips_unknown_and_test_files(tmp_path):
     assert _tracked_source(tmp_path / "target" / "app.py") is False
 
 
+def test_a_file_outside_the_project_root_is_not_source(tmp_path):
+    outside = tmp_path / "outside.py"
+    outside.write_text("x = 1\n", encoding="utf-8")
+    root = tmp_path / "project"
+    root.mkdir()
+    assert _tracked_source(outside, root) is False
+
+
 def test_test_files_and_skipped_directories_are_left_out(tmp_path):
     write_source(tmp_path, "src/app.py", "x = 1\n")
     write_source(tmp_path, "src/foo_test.py", "x = 1\n")
