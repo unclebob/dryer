@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from dryer.cli import run
 from dryer.discover import iter_source_files, language_of
 from dryer.extract import entries_in_source
 from dryer.scan import find_duplicates, scan_files
@@ -295,6 +296,20 @@ def test_swift_keeps_methods_bodies_and_top_level_closures_only():
 def test_swiftui_views_match_when_only_the_data_changes(tmp_path):
     assert _scored(tmp_path, INVOICE, RECEIPT) == 1.0
     assert _scored(tmp_path, RECEIPT, LABEL_VIEW) < 1.0
+
+
+def test_swift_report_writes_the_same_snapshot(tmp_path, capsys):
+    write_source(tmp_path, "left.swift", SWIFT_LEFT)
+    write_source(tmp_path, "right.swift", SWIFT_RIGHT)
+    assert run(["--root", str(tmp_path)]) == 0
+    captured = capsys.readouterr()
+    assert "DUPLICATE score=1.00" in captured.out
+    assert "left.swift:1-4" in captured.out
+    assert "right.swift:1-4" in captured.out
+    text = (tmp_path / ".metrics" / "dry.edn").read_text(encoding="utf-8")
+    assert ':language "swift"' in text
+    assert ':file "left.swift"' in text
+    assert "Wrote" in captured.err
 
 
 def test_a_swift_package_skips_its_tests(tmp_path):

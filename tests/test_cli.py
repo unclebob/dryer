@@ -40,6 +40,8 @@ def test_help_does_not_scan(capsys):
     assert "Usage: dryer" in out
     assert "__pycache__" in out
     assert ".test.cts" in out
+    assert "Swift (.swift)" in out
+    assert "*Tests.swift" in out
     assert "--threshold" in out
 
 

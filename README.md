@@ -1,8 +1,8 @@
 # dryer
 
-dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and Python. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
+dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python, and Swift. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
 
-Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). The other languages use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. A form is only compared with forms written in the same language.
+Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). Java, Go, TypeScript, Rust, and Python use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. Swift uses that same unit. A form is only compared with forms written in the same language.
 
 The score is Jaccard similarity of structural fingerprints:
 
@@ -37,6 +37,13 @@ int alpha(int[] xs) {
 def beta(items):
     kept = filter(items, even)
     return map(kept, dec)
+```
+
+```swift
+func alpha(xs: [Int]) -> [Int] {
+    let ys = filter(xs, odd)
+    return map(ys, inc)
+}
 ```
 
 What stays is the call or method name, the operator, and the shape of the tree. What drops out is the local name, the field name, the literal, and the keyword. A Clojure keyword call `(:kind m)` and `(:id row)` is the same shape. So is `order.total` and `row.amount`.
@@ -101,6 +108,9 @@ DUPLICATE score=0.89
 | TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
+| Swift | functions and methods with a body, computed properties, and file-level closures | initializers, subscripts, protocol requirements, and closures or functions nested inside another form |
+
+A Swift computed property includes a SwiftUI `body`. A method on a struct, class, enum, or extension is a candidate, and so is a protocol method that has a default body. A protocol requirement does not. A closure written inside a function stays in that function. A closure bound with `let` or `var` at file scope is its own candidate, as a top-level arrow function is in TypeScript. Argument labels stay, because in Swift they are part of the call. `>=` and `!=` stay. Locals, field names, and literals, including `nil`, do not. An interpolated string keeps the interpolation.
 
 Clojure reader conditionals keep the `:clj` branch, as dry4clj does. Syntax-quote is kept as a `syntax-quote` form rather than expanded.
 
