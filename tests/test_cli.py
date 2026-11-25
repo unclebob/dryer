@@ -30,7 +30,9 @@ def test_language_detection():
     assert language_of("ui/view.tsx") == "typescript"
     assert language_of("src/lib.rs") == "rust"
     assert language_of("src/dryer/cli.py") == "python"
+    assert language_of("app/Models/User.php") == "php"
     assert language_of("types.d.ts") is None
+    assert language_of("resources/views/home.blade.php") is None
     assert language_of("notes.md") is None
 
 
@@ -40,6 +42,8 @@ def test_help_does_not_scan(capsys):
     assert "Usage: dryer" in out
     assert "__pycache__" in out
     assert ".test.cts" in out
+    assert "PHP (.php)" in out
+    assert "*Test.php" in out
     assert "--threshold" in out
 
 
@@ -171,10 +175,12 @@ def test_names_that_are_tests():
         "pkg/foo_test.py",
         "pkg/test_foo.py",
         "tests/app.py",
+        "app/UserTest.php",
     ]
     for name in names:
         assert is_test_file(name), name
     assert not is_test_file("src/app.py")
+    assert not is_test_file("app/Contest.php")
 
 
 def _init_repo(path: Path) -> None:
