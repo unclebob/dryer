@@ -5,6 +5,9 @@ type constructed by `new`. Local names, field names, type names in argument
 position, and literals become generic markers. Two functions that call the
 same operations in the same shape therefore share a fingerprint set even when
 their locals differ.
+
+A PHP `$local` is a `variable_name` around a `name`, so it drops like any
+other local. `$this` is the receiver, not a local, and stays.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ _IDENTIFIERS = {
     "shorthand_property_identifier",
     "shorthand_property_identifier_pattern",
     "package_identifier",
+    "name",
 }
 
 _LITERALS = {
@@ -59,6 +63,7 @@ _LITERALS = {
     "undefined",
     "null_literal",
     "boolean_literal",
+    "boolean",
     "template_string",
     "regex",
     "regex_literal",
@@ -119,6 +124,10 @@ _CALLS = {
     "method_invocation",
     "object_creation_expression",
     "new_expression",
+    "function_call_expression",
+    "member_call_expression",
+    "nullsafe_member_call_expression",
+    "scoped_call_expression",
 }
 
 _ATTRIBUTES = {
@@ -127,11 +136,14 @@ _ATTRIBUTES = {
     "selector_expression",
     "field_access",
     "field_expression",
+    "member_access_expression",
+    "nullsafe_member_access_expression",
 }
 
 _SCOPED = {
     "scoped_identifier",
     "scoped_type_identifier",
+    "qualified_name",
 }
 
 _ARG_LISTS = {"argument_list", "arguments"}
@@ -185,6 +197,8 @@ def _callee_leaf(node):
 
 
 def _named_leaf(node, head: bool):
+    if node.type == "variable_name" and _text(node) == "$this":
+        return [K("symbol"), "$this"]
     if node.type in _IDENTIFIERS:
         if head:
             return [K("symbol"), _text(node)]
