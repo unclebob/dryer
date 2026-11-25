@@ -18,6 +18,7 @@ _SKIP = {
     "block_comment",
     "documentation_comment",
     "doc_comment",
+    "multiline_comment",
 }
 
 _IDENTIFIERS = {
@@ -63,6 +64,10 @@ _LITERALS = {
     "template_string",
     "regex",
     "regex_literal",
+    "line_string_literal",
+    "multi_line_string_literal",
+    "nil_literal",
+    "real_literal",
 }
 
 _OPERATORS = {
@@ -128,7 +133,13 @@ _ATTRIBUTES = {
     "selector_expression",
     "field_access",
     "field_expression",
+    "navigation_expression",
 }
+
+# The spelling is the structure: Swift spells >= as custom_operator, and an
+# argument label is part of the call name.
+_TEXT_SYMBOLS = {"custom_operator", "value_argument_label"}
+_INTERPOLATED = {"interpolation", "interpolated_expression"}
 
 _SCOPED = {
     "scoped_identifier",
@@ -159,9 +170,7 @@ _PENDING = object()
 def _is_literal(node) -> bool:
     if node.type not in _LITERALS:
         return False
-    if node.type == "string" and any(child.type == "interpolation" for child in node.children):
-        return False
-    return True
+    return not any(child.type in _INTERPOLATED for child in node.children)
 
 
 def _named_before_args(node):
@@ -204,6 +213,8 @@ def _try_leaf(node, mode: str, head: bool):
         return None
     if node.type in _OPERATORS:
         return [K("symbol"), node.type]
+    if node.type in _TEXT_SYMBOLS:
+        return [K("symbol"), _text(node)]
     if not node.is_named:
         return None
     return _named_leaf(node, head)
@@ -223,11 +234,29 @@ def _call_jobs(node):
     return jobs
 
 
-def _attr_jobs(node, head: bool):
+def _member_name(node):
+    """Swift wraps the member in navigation_suffix. The name inside is the member."""
+
+    if node.type != "navigation_suffix":
+        return node
+    for child in node.named_children:
+        if child.type in _IDENTIFIERS:
+            return child
+    return node
+
+
+def _attr_ends(node):
     named = list(node.named_children)
     if not named:
-        return []
+        return [], None
     *objects, name = named
+    return objects, _member_name(name)
+
+
+def _attr_jobs(node, head: bool):
+    objects, name = _attr_ends(node)
+    if name is None:
+        return []
     jobs = [(obj, "norm", False) for obj in objects]
     if name.type in _IDENTIFIERS:
         return jobs
@@ -307,10 +336,9 @@ def _assemble_call(node, cache):
 
 
 def _assemble_attr(node, head: bool, cache):
-    named = list(node.named_children)
-    if not named:
+    objects, name = _attr_ends(node)
+    if name is None:
         return [K(node.type)]
-    *objects, name = named
     parts = [K(node.type)]
     for obj in objects:
         norm = cache[(id(obj), "norm", False)]
