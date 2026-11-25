@@ -620,6 +620,14 @@ def test_php_keeps_the_called_name_and_drops_locals():
     assert _php_score("\\App\\total($xs)", "\\App\\count($xs)") < 1.0
 
 
+def test_php_methods_calling_different_methods_differ():
+    left = forms("php", PHP_LEFT, "left.php")
+    right = forms("php", PHP_RIGHT.replace("$this->keep(", "$this->drop("), "right.php")
+    found = find_duplicates(left + right, threshold=0.0)
+    assert len(found) == 1
+    assert found[0].score < 1.0
+
+
 def test_php_this_is_not_a_local():
     assert _php_score("$this->save()", "$items->save()") < 1.0
     assert _php_score("$this->total", "$this->count") == 1.0
