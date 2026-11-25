@@ -130,6 +130,14 @@ def _typescript_nodes(data: bytes, root) -> list:
     return found
 
 
+def _swift_nodes(data: bytes, root) -> list:
+    found = []
+    for node in descendants(root):
+        if node.type == "function_declaration" and _has(node, "function_body"):
+            found.append(node)
+    return found
+
+
 def _rust_nodes(data: bytes, root) -> list:
     found = []
     for node in descendants(root):
@@ -149,6 +157,7 @@ _PICKERS = {
     "python": ("python", _python_nodes),
     "typescript": (_grammar, _typescript_nodes),
     "rust": ("rust", _rust_nodes),
+    "swift": ("swift", _swift_nodes),
 }
 
 
