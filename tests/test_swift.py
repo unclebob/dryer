@@ -372,6 +372,36 @@ def test_a_swift_package_skips_its_tests(tmp_path):
     assert relative == ["Sources/App.swift"]
 
 
+def test_a_deinit_is_compared_and_keeps_its_nested_function(tmp_path):
+    source = """\
+class Panel {
+    deinit {
+        func hidden() -> Int {
+            return cache()
+        }
+        close(handle)
+    }
+
+    func stop() {
+        close(handle)
+    }
+}
+"""
+    entries, warning = entries_in_source("swift", source, "Panel.swift", "Panel.swift")
+    assert warning is None
+    assert [(entry.start_line, entry.end_line) for entry in entries] == [(2, 7), (9, 11)]
+    assert _scored(
+        tmp_path,
+        "class A {\n    deinit {\n        close(handle)\n        release(buffer)\n    }\n}\n",
+        "class B {\n    deinit {\n        close(other)\n        release(kept)\n    }\n}\n",
+    ) == 1.0
+    assert _scored(
+        tmp_path,
+        "class A {\n    deinit {\n        close(handle)\n    }\n}\n",
+        "class B {\n    deinit {\n        shutdown(other)\n    }\n}\n",
+    ) < 1.0
+
+
 def test_a_top_level_swift_closure_matches_its_renamed_copy(tmp_path):
     left = """\
 let alpha = { (xs: [Int]) -> [Int] in

@@ -60,7 +60,7 @@ named {_skipped_directory_text()} are skipped, as are *_test.go, *.test.cts,
 
 Clojure compares every top-level form except ns. The other languages compare
 functions and methods. Swift also compares computed properties, including a
-SwiftUI view body, and a closure bound at file scope. A form is only compared
+SwiftUI view body, a closure bound at file scope, and deinit. A form is only compared
 with forms in the same language.
 
 Exit codes:
