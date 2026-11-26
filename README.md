@@ -1,8 +1,8 @@
 # dryer
 
-dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, Python, and Swift. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
+dryer finds candidate duplicate code in Clojure, Java, Go, TypeScript, Vue, Rust, Python, and Swift. One run detects the language of each source file, normalizes that language's forms, and reports pairs whose structure is close enough to review.
 
-Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). Java, Go, TypeScript, Rust, and Python use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. Swift uses that same unit. A form is only compared with forms written in the same language.
+Clojure follows [dry4clj](https://github.com/unclebob/dry4clj). Java, Go, TypeScript, Rust, and Python use the same idea on the functions and methods [crapper](https://github.com/unclebob/crapper) and [mutator](https://github.com/unclebob/mutator) already treat as one unit. Swift uses that same unit. Vue `<script>` blocks normalize and compare alongside TypeScript. Otherwise, a form is only compared with forms written in the same language.
 
 The score is Jaccard similarity of structural fingerprints:
 
@@ -106,6 +106,7 @@ DUPLICATE score=0.89
 | Java | methods with a body | constructors, abstract methods, methods inside anonymous or local classes |
 | Go | functions and methods with a body | function literals stay inside the enclosing function |
 | TypeScript | functions, methods, and top-level arrow functions | callbacks nested inside another function |
+| Vue | `<script>` and `<script setup>` functions, methods, Options API hooks, and top-level Composition API callbacks | `<template>`, `<style>`, `<script src>`, non-JS/TS scripts, `props`/`emits`/`components`/`directives`/`provide`/`inject`, `watch` source getters, and nested callbacks |
 | Rust | functions and methods with a body | functions inside `mod tests`, and closures |
 | Python | functions and methods | functions nested inside another function |
 | Swift | functions and methods with a body, computed properties, and file-level closures | initializers, subscripts, protocol requirements, and closures or functions nested inside another form |
