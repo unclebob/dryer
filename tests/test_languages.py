@@ -1,8 +1,17 @@
+import random
 from pathlib import Path
 
 from dryer.extract import entries_in_source
-from dryer.model import Entry
-from dryer.scan import _keep, find_duplicates, scan_files
+from dryer.model import Duplicate, Entry, Span
+from dryer.scan import (
+    _duplicate_key,
+    _keep,
+    _same_span,
+    display_path,
+    find_duplicates,
+    scan_files,
+)
+from dryer.shape import K, fingerprints, jaccard, pr
 from dryer.treesitter import descendants, end_line, parse
 
 
@@ -641,3 +650,121 @@ def test_a_deep_expression_is_read():
     entries, warning = entries_in_source("clojure", f"(defn place [] {nested})\n", "app.clj", "app.clj")
     assert warning is None
     assert entries
+
+
+def _brute_force_duplicates(entries: list[Entry], threshold: float) -> list[Duplicate]:
+    by_language: dict[str, list[Entry]] = {}
+    for entry in entries:
+        by_language.setdefault(entry.language, []).append(entry)
+
+    found: list[Duplicate] = []
+    for language, group in by_language.items():
+        for index, left in enumerate(group):
+            for right in group[index + 1 :]:
+                if _same_span(left, right):
+                    continue
+                score = jaccard(left.fingerprints, right.fingerprints)
+                if score >= threshold:
+                    found.append(
+                        Duplicate(
+                            score=score,
+                            language=language,
+                            left=Span(left.file, left.start_line, left.end_line),
+                            right=Span(right.file, right.start_line, right.end_line),
+                            left_nodes=left.nodes,
+                            right_nodes=right.nodes,
+                        )
+                    )
+    found.sort(key=_duplicate_key)
+    return found
+
+
+def _assert_parity(entries: list[Entry], thresholds: tuple[float, ...]) -> None:
+    for threshold in thresholds:
+        actual = find_duplicates(entries, threshold)
+        expected = _brute_force_duplicates(entries, threshold)
+        assert actual == expected, f"mismatch at threshold={threshold!r}"
+
+
+def test_find_duplicates_matches_brute_force_across_thresholds():
+    thresholds = (-0.1, 0.0, 0.1, 1 / 3, 0.5, 0.7999999999, 0.8, 0.82, 0.99, 1.0, 1.1)
+
+    crafted = [
+        _entry("a.py", 1, 4, set(), language="python", nodes=10),
+        _entry("b.py", 1, 4, set(), language="python", nodes=12),
+        _entry("a.py", 1, 4, {"x", "y", "z"}, language="python", nodes=15),
+        _entry("a.py", 1, 4, {"x", "y", "w"}, language="python", nodes=16),
+        _entry("a.py", 1, 8, {"x"}, language="python", nodes=20),
+        _entry("a.py", 1, 4, {"x", "y"}, language="python", nodes=18),
+        _entry("b.py", 1, 4, {"x"}, language="python", nodes=19),
+        _entry("c.py", 5, 9, {"t0", "t1", "t2", "t3"}, language="python", nodes=22),
+        _entry("d.py", 5, 9, {"t0", "t1", "t2", "t3", "t4"}, language="python", nodes=25),
+        _entry("only.go", 1, 5, {"only"}, language="go", nodes=21),
+        _entry("empty_only.go", 2, 6, set(), language="go", nodes=22),
+        _entry("e1.rs", 1, 3, {"a", "b"}, language="rust", nodes=14),
+        _entry("e2.rs", 1, 3, {"a", "c"}, language="rust", nodes=15),
+        _entry("e3.rs", 4, 8, {"a", "b", "c"}, language="rust", nodes=17),
+    ]
+    _assert_parity(crafted, thresholds)
+
+    boundary_49 = [
+        _entry("big.py", 1, 10, {f"tok{i}" for i in range(49)}, nodes=50),
+        _entry("small.py", 1, 5, {"tok0", "tok1", "tok2"}, nodes=10),
+    ]
+    _assert_parity(boundary_49, (3 / 49, 3 / 49 + 1e-6))
+
+    languages = ("python", "rust", "java")
+    files = ("a.src", "b.src", "c.src")
+    token_pool = [f"fp_{i}" for i in range(18)]
+
+    for seed in range(5):
+        rng = random.Random(seed)
+        entries: list[Entry] = []
+        for idx in range(36):
+            language = rng.choice(languages)
+            file = rng.choice(files)
+            start = rng.choice((1, 1, 4, 10, 20))
+            end = start + rng.choice((2, 3, 5, 7))
+            size = rng.choice((0, 0, 1, 2, 3, 4, 5, 8, 12, 16))
+            tokens = frozenset(rng.sample(token_pool, size))
+            entries.append(Entry(language, file, start, end, 10 + idx, tokens))
+        _assert_parity(entries, thresholds)
+
+
+def _reference_fingerprints(node) -> frozenset[str]:
+    collected: set[str] = set()
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        collected.add(pr(current))
+        if isinstance(current, list):
+            pending.extend(current)
+    return frozenset(collected)
+
+
+def test_fingerprints_matches_printed_subtrees_and_atoms():
+    shared = [K("call"), K("fn"), r'a"b\c']
+    trees = [
+        K("symbol"),
+        "plain",
+        r'quote "here" and slash \there',
+        [],
+        [[]],
+        [K("defn"), [K("vec"), K("local")], [K("call"), "inc", K("local")]],
+        [K("block"), shared, [K("ret"), [], r'x\"y'], shared],
+    ]
+    for tree in trees:
+        assert fingerprints(tree) == _reference_fingerprints(tree)
+
+
+def test_display_path_handles_inside_and_outside_root(tmp_path):
+    root = tmp_path / "project"
+    inside = root / "sub" / "mod.py"
+    outside = tmp_path / "other" / "ext.py"
+    inside.parent.mkdir(parents=True)
+    outside.parent.mkdir(parents=True)
+    inside.write_text("x = 1\n", encoding="utf-8")
+    outside.write_text("y = 2\n", encoding="utf-8")
+
+    assert display_path(inside, root) == "sub/mod.py"
+    assert display_path(outside, root) == outside.resolve().as_posix()
