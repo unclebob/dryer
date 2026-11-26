@@ -28,6 +28,7 @@ def test_language_detection():
     assert language_of("Widget.java") == "java"
     assert language_of("board.go") == "go"
     assert language_of("ui/view.tsx") == "typescript"
+    assert language_of("ui/Card.vue") == "vue"
     assert language_of("src/lib.rs") == "rust"
     assert language_of("src/dryer/cli.py") == "python"
     assert language_of("types.d.ts") is None
@@ -40,6 +41,7 @@ def test_help_does_not_scan(capsys):
     assert "Usage: dryer" in out
     assert "__pycache__" in out
     assert ".test.cts" in out
+    assert ".test.vue" in out
     assert "Swift (.swift)" in out
     assert "*Tests.swift" in out
     assert "--threshold" in out
@@ -169,6 +171,8 @@ def test_names_that_are_tests():
         "ui/a.spec.mts",
         "ui/a.test.cts",
         "ui/a.spec.cts",
+        "ui/Card.test.vue",
+        "ui/Card.spec.vue",
         "tests/conftest.py",
         "pkg/foo_test.py",
         "pkg/test_foo.py",

@@ -1,7 +1,8 @@
 """Find source files and decide which language each one is written in.
 
 The extensions and the skipped directories match crapper and mutator, with
-`.cljd` added because dry4clj reads it and `.swift` added for Swift.
+`.cljd` added because dry4clj reads it and `.swift` and `.vue` added for Swift
+and Vue.
 """
 
 import os
@@ -22,6 +23,7 @@ EXTENSIONS = {
     ".rs": "rust",
     ".py": "python",
     ".swift": "swift",
+    ".vue": "vue",
 }
 
 SKIP_DIRS = {
@@ -62,6 +64,8 @@ _TEST_SUFFIXES = (
     ".spec.mts",
     ".test.cts",
     ".spec.cts",
+    ".test.vue",
+    ".spec.vue",
     "_test.py",
     "Tests.swift",
 )

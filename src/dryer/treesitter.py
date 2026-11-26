@@ -4,17 +4,29 @@ from functools import lru_cache
 
 
 @lru_cache(maxsize=None)
-def parser_for(language: str):
-    from tree_sitter_language_pack import download, get_parser
+def _language_for(language: str):
+    from tree_sitter_language_pack import download, get_language
 
     download([language])
-    return get_parser(language)
+    return get_language(language)
+
+
+def parser_for(language: str):
+    from tree_sitter import Parser
+
+    return Parser(_language_for(language))
 
 
 def parse(source: str, language: str):
     data = source.encode("utf-8")
     tree = parser_for(language).parse(data)
     return data, tree
+
+
+def parse_range(data: bytes, language: str, span):
+    parser = parser_for(language)
+    parser.included_ranges = [span]
+    return parser.parse(data)
 
 
 def node_text(data: bytes, node) -> str:

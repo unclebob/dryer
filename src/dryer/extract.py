@@ -4,7 +4,8 @@ Clojure compares every top-level list except `ns`, matching dry4clj. The other
 languages compare the functions and methods crapper scores: bodies, not
 signatures alone, and not callbacks nested inside another function. Rust
 functions inside `mod tests` are test code and are skipped. Swift also
-compares computed properties, a closure bound at file scope, and deinit.
+compares computed properties, a closure bound at file scope, and deinit. Vue
+extracts `<script>` blocks and normalizes them into the TypeScript pool.
 """
 
 from __future__ import annotations
@@ -15,6 +16,9 @@ from dryer.clojure_read import read_source
 from dryer.model import Entry
 from dryer.shape import fingerprints, node_count
 from dryer.treesitter import child_of_type, descendants, end_line, node_text, parse, start_line
+from dryer.vue import extract_vue_nodes
+
+_VUE_COMPARISON_LANGUAGE = "typescript"
 
 _TS_FUNCTION = {
     "function_declaration",
@@ -187,12 +191,9 @@ _PICKERS = {
 }
 
 
-def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entry]:
-    grammar_or_name, pick = _PICKERS[language]
-    grammar = grammar_or_name(path) if callable(grammar_or_name) else grammar_or_name
-    data, tree = parse(source, grammar)
+def _entries_for_nodes(language: str, file: str, data: bytes, nodes: list) -> list[Entry]:
     entries = []
-    for node in pick(data, tree.root_node):
+    for node in nodes:
         normalized = normalize(node, data)
         if normalized is None:
             continue
@@ -207,6 +208,13 @@ def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entr
             )
         )
     return entries
+
+
+def _tree_entries(language: str, source: str, path: str, file: str) -> list[Entry]:
+    grammar_or_name, pick = _PICKERS[language]
+    grammar = grammar_or_name(path) if callable(grammar_or_name) else grammar_or_name
+    data, tree = parse(source, grammar)
+    return _entries_for_nodes(language, file, data, pick(data, tree.root_node))
 
 
 def _clojure_entries(source: str, file: str) -> tuple[list[Entry], str | None]:
@@ -232,6 +240,9 @@ def _clojure_entries(source: str, file: str) -> tuple[list[Entry], str | None]:
 def entries_in_source(language: str, source: str, path: str, file: str) -> tuple[list[Entry], str | None]:
     if language == "clojure":
         return _clojure_entries(source, file)
+    if language == "vue":
+        data, nodes = extract_vue_nodes(source, _typescript_nodes)
+        return _entries_for_nodes(_VUE_COMPARISON_LANGUAGE, file, data, nodes), None
     if language not in _PICKERS:
         return [], None
     return _tree_entries(language, source, path, file), None
