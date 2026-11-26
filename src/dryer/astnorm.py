@@ -98,12 +98,16 @@ _OPERATORS = {
     "*=",
     "/=",
     "%=",
+    "**=",
     "&=",
     "|=",
     "^=",
     "<<=",
     ">>=",
     ">>>=",
+    "??=",
+    "||=",
+    "&&=",
     "!",
     "~",
     "++",
@@ -142,7 +146,7 @@ _ATTRIBUTES = {
 # argument label is part of the call name. A trailing closure's label is an
 # identifier placed directly on the call_suffix, not a value_argument_label.
 _TEXT_SYMBOLS = {"custom_operator", "value_argument_label"}
-_INTERPOLATED = {"interpolation", "interpolated_expression"}
+_INTERPOLATED = {"interpolation", "interpolated_expression", "template_substitution"}
 
 _SCOPED = {
     "scoped_identifier",
